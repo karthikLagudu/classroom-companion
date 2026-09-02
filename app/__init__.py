@@ -1,0 +1,1 @@
+"""Classroom Companion application package."""
