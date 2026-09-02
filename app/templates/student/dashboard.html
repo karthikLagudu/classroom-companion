@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block title %}My assignments{% endblock %}
+{% block content %}
+<div class="hero"><div><p class="eyebrow">STUDENT WORKSPACE</p><h1>Your work, clearly organized.</h1><p>Share progress early. Asking for help is part of the work.</p></div></div>
+<section class="card"><p class="eyebrow">YOUR ASSIGNMENTS</p><h2>What’s next</h2><div class="assignment-cards">{% for a, state in rows %}<a href="/student/assignments/{{ a.id }}" class="assignment-card"><div><b class="badge {{ state.status }}">{{ state.status|replace('_',' ') }}</b><h3>{{ a.title }}</h3><p>{{ a.instructions[:140] }}{% if a.instructions|length > 140 %}…{% endif %}</p></div><span>Due {{ a.due_at.strftime('%d %b · %I:%M %p') }} →</span></a>{% else %}<p class="empty">No assignments yet.</p>{% endfor %}</div></section>
+<section class="card"><p class="eyebrow">FEEDBACK</p><h2>From your teacher</h2><div class="timeline">{% for f in feedback %}<div><i></i><p><strong>Assignment #{{ f.assignment_id }}</strong><span>{{ f.message }}</span></p></div>{% else %}<p class="empty">Feedback will appear here.</p>{% endfor %}</div></section>
+{% endblock %}
+

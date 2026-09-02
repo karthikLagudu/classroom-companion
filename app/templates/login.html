@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Sign in · Classroom Companion{% endblock %}
+{% block content %}
+<section class="login-wrap">
+  <div class="login-copy"><p class="eyebrow">WELCOME BACK</p><h1>Keep every learner<br><em>moving forward.</em></h1>
+    <p>Assignments, blockers, submissions, and feedback—in one calm view.</p></div>
+  <form class="card login-card" method="post" action="/login">
+    <h2>Sign in</h2><p class="muted">Use one of the seeded demo accounts.</p>
+    {% if error %}<div class="error">{{ error }}</div>{% endif %}
+    <label>Email<input type="email" name="email" autocomplete="username" required autofocus></label>
+    <label>Password<input type="password" name="password" autocomplete="current-password" required></label>
+    <button class="primary wide">Continue</button>
+    <p class="tiny">Demo: teacher@sim.school / DemoPass123!</p>
+  </form>
+</section>
+{% endblock %}
+

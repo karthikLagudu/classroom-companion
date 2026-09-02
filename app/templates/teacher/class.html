@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block title %}{{ classroom.name }}{% endblock %}
+{% block content %}
+<a class="back" href="/teacher">← Dashboard</a><div class="hero"><div><p class="eyebrow">{{ classroom.grade }}</p><h1>{{ classroom.name }}</h1></div></div>
+<div class="grid two-one"><section class="card"><h2>Assignments</h2><div class="list">{% for a in assignments %}<a class="list-row" href="/teacher/assignments/{{ a.id }}"><div><strong>{{ a.title }}</strong><span>Due {{ a.due_at }}</span></div><b class="badge {{ a.status }}">{{ a.status }}</b></a>{% else %}<p class="empty">No assignments.</p>{% endfor %}</div></section>
+<section class="card"><h2>Students</h2><div class="list">{% for s in students %}<div class="list-row"><div><strong>{{ s.name }}</strong><span>{{ 'Telegram linked' if s.telegram_user_id else 'Not linked' }}</span></div><b class="dot {{ 'good' if s.telegram_user_id else 'muted-dot' }}"></b></div>{% endfor %}</div></section></div>
+{% endblock %}
+
