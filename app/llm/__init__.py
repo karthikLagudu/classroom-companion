@@ -1,0 +1,1 @@
+"""Validated language-model boundary."""
