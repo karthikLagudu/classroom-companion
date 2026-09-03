@@ -17,6 +17,17 @@
   <div class="metric danger"><small>Attention</small><span>{{ risks|length }}</span><p>Students to review</p></div>
   <div class="metric"><small>Assignments</small><span>{{ assignments|length }}</span><p>Total created</p></div>
 </div>
+<section class="card">
+  <p class="eyebrow">ONBOARDING</p>
+  <h2>Create a class</h2>
+  <form method="post" action="/teacher/classes" class="inline-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>School<select name="school_id">{% for school in schools %}<option value="{{ school.id }}">{{ school.name }}</option>{% endfor %}</select></label>
+    <label>Class name<input name="name" placeholder="Grade 8 Science" required></label>
+    <label>Grade<input name="grade" placeholder="Grade 8" required></label>
+    <button>Create class</button>
+  </form>
+</section>
 <div class="grid two-one">
   <section class="card create-card">
     <div class="section-head">
@@ -41,7 +52,7 @@
     <p class="eyebrow">ATTENTION</p>
     <h2>Student risks</h2>
     <p class="muted">{{ risk_summary }}</p>
-    <div class="list">{% for state, student, assignment in risks %}<a href="/teacher/assignments/{{ assignment.id }}" class="list-row"><div><strong>{{ student.name }}</strong><span>{{ assignment.title }}</span></div><b class="badge {{ state.status }}">{{ state.status|replace('_',' ') }}</b></a>{% else %}<p class="empty">No active risks. The room is quiet right now.</p>{% endfor %}</div>
+    <div class="list">{% for item in risks %}<a href="/teacher/assignments/{{ item.assignment_id }}" class="list-row"><div><strong>{{ item.student_name }}</strong><span>{{ item.assignment_title }} · {{ item.reasons|join(', ') }}</span></div><b class="badge {{ 'overdue' if item.risk_level == 'critical' else 'blocked' }}">{{ item.risk_score }}</b></a>{% else %}<p class="empty">No active risks. The room is quiet right now.</p>{% endfor %}</div>
   </section>
 </div>
 <div class="grid two-one">

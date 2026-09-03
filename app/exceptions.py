@@ -28,3 +28,7 @@ class TelegramDeliveryError(DomainError):
 
 class ValidationError(DomainError):
     pass
+
+
+class AmbiguousReferenceError(ValidationError):
+    pass

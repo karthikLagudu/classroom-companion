@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -13,15 +13,20 @@ from app.models import (
     AssignmentTarget,
     ClassMembership,
     IdempotencyKey,
-    Reminder,
     StudentAssignmentState,
     User,
 )
 from app.services.authorization import require_teacher_class
+from app.services.notification import NotificationService
 from app.services.state_machine import transition
+from app.reminders.scheduler import ReminderScheduler
 
 
 class AssignmentService:
+    def __init__(self, notifications: NotificationService | None = None):
+        self.notifications = notifications
+        self.scheduler = ReminderScheduler()
+
     def create(
         self,
         db: Session,
@@ -74,7 +79,8 @@ class AssignmentService:
                     assignment_id=assignment.id, student_id=student.id, status="assigned"
                 )
             )
-            self._schedule_due_reminder(db, assignment, student.id)
+        db.flush()
+        self.scheduler.schedule_assignment(db, assignment)
         db.add(
             ActivityEvent(
                 school_id=classroom.school_id,
@@ -92,25 +98,17 @@ class AssignmentService:
             )
         )
         db.flush()
+        if self.notifications:
+            self.notifications.notify_assignment_created(db, assignment)
         return assignment
 
-    def _schedule_due_reminder(self, db: Session, assignment: Assignment, student_id: int) -> None:
-        scheduled = max(datetime.now(UTC), assignment.due_at - timedelta(hours=24))
-        stamp = assignment.due_at.isoformat()
-        db.add(
-            Reminder(
-                assignment_id=assignment.id,
-                student_id=student_id,
-                reminder_type="due_soon",
-                scheduled_for=scheduled,
-                status="pending",
-                reason="24-hour deadline reminder",
-                dedupe_key=f"due:{assignment.id}:{student_id}:{stamp}",
-            )
-        )
-
     def update_deadline(
-        self, db: Session, actor: User, assignment_id: int, due_at: datetime
+        self,
+        db: Session,
+        actor: User,
+        assignment_id: int,
+        due_at: datetime,
+        idempotency_key: str | None = None,
     ) -> Assignment:
         from app.services.authorization import require_teacher_assignment
 
@@ -119,60 +117,100 @@ class AssignmentService:
             raise ValidationError("Cancelled assignments cannot be changed")
         if due_at.tzinfo is None or due_at <= datetime.now(UTC):
             raise ValidationError("New deadline must be a future timezone-aware time")
+        if idempotency_key and db.get(IdempotencyKey, idempotency_key):
+            return assignment
         old = assignment.due_at
+        old_aware = old.replace(tzinfo=old.tzinfo or UTC)
+        if old_aware == due_at.astimezone(UTC):
+            if idempotency_key:
+                db.add(
+                    IdempotencyKey(
+                        key=idempotency_key,
+                        operation="update_deadline",
+                        result_reference=str(assignment.id),
+                    )
+                )
+            return assignment
         assignment.due_at = due_at
+        assignment.schedule_version += 1
         assignment.updated_at = datetime.now(UTC)
-        pending = db.scalars(
-            select(Reminder).where(
-                Reminder.assignment_id == assignment.id, Reminder.status == "pending"
-            )
-        ).all()
-        for item in pending:
-            item.status = "cancelled"
-            item.reason = "Superseded by deadline update"
-        student_ids = db.scalars(
-            select(AssignmentTarget.student_id).where(
-                AssignmentTarget.assignment_id == assignment.id
-            )
-        ).all()
-        for student_id in student_ids:
-            self._schedule_due_reminder(db, assignment, student_id)
+        self.scheduler.reschedule(db, assignment)
         db.add(
             ActivityEvent(
                 school_id=assignment.school_id,
                 classroom_id=assignment.classroom_id,
                 actor_user_id=actor.id,
-                event_type="deadline_updated",
+                event_type="assignment_deadline_updated",
                 entity_type="assignment",
                 entity_id=assignment.id,
                 metadata_json={"from": old.isoformat(), "to": due_at.isoformat()},
             )
         )
+        if idempotency_key:
+            db.add(
+                IdempotencyKey(
+                    key=idempotency_key,
+                    operation="update_deadline",
+                    result_reference=str(assignment.id),
+                )
+            )
+        if self.notifications:
+            self.notifications.notify_deadline_changed(db, assignment, old_aware)
         return assignment
 
     def clarify(
-        self, db: Session, actor: User, assignment_id: int, instructions: str
+        self,
+        db: Session,
+        actor: User,
+        assignment_id: int,
+        instructions: str,
+        idempotency_key: str | None = None,
     ) -> Assignment:
         from app.services.authorization import require_teacher_assignment
 
         assignment = require_teacher_assignment(db, actor, assignment_id)
         if assignment.status == "cancelled":
             raise ValidationError("Cancelled assignments cannot be changed")
-        assignment.instructions = instructions.strip()
+        if idempotency_key and db.get(IdempotencyKey, idempotency_key):
+            return assignment
+        clean = instructions.strip()
+        if not clean:
+            raise ValidationError("Instructions cannot be empty")
+        if assignment.instructions == clean:
+            return assignment
+        assignment.instructions = clean
+        assignment.updated_at = datetime.now(UTC)
         db.add(
             ActivityEvent(
                 school_id=assignment.school_id,
                 classroom_id=assignment.classroom_id,
                 actor_user_id=actor.id,
-                event_type="instructions_updated",
+                event_type="assignment_instructions_updated",
                 entity_type="assignment",
                 entity_id=assignment.id,
                 metadata_json={},
             )
         )
+        operation_key = idempotency_key or f"instructions:{uuid.uuid4()}"
+        if idempotency_key:
+            db.add(
+                IdempotencyKey(
+                    key=idempotency_key,
+                    operation="update_instructions",
+                    result_reference=str(assignment.id),
+                )
+            )
+        if self.notifications:
+            self.notifications.notify_instructions_changed(db, assignment, operation_key)
         return assignment
 
-    def cancel(self, db: Session, actor: User, assignment_id: int) -> Assignment:
+    def cancel(
+        self,
+        db: Session,
+        actor: User,
+        assignment_id: int,
+        idempotency_key: str | None = None,
+    ) -> Assignment:
         from app.services.authorization import require_teacher_assignment
 
         assignment = require_teacher_assignment(db, actor, assignment_id)
@@ -188,13 +226,7 @@ class AssignmentService:
         ):
             if state.status not in {"completed", "cancelled"}:
                 transition(state, "cancelled", now)
-        for reminder in db.scalars(
-            select(Reminder).where(
-                Reminder.assignment_id == assignment.id, Reminder.status == "pending"
-            )
-        ):
-            reminder.status = "cancelled"
-            reminder.reason = "Assignment cancelled"
+        self.scheduler.cancel(db, assignment.id, "Assignment cancelled")
         db.add(
             ActivityEvent(
                 school_id=assignment.school_id,
@@ -206,6 +238,16 @@ class AssignmentService:
                 metadata_json={},
             )
         )
+        if idempotency_key:
+            db.add(
+                IdempotencyKey(
+                    key=idempotency_key,
+                    operation="cancel_assignment",
+                    result_reference=str(assignment.id),
+                )
+            )
+        if self.notifications:
+            self.notifications.notify_assignment_cancelled(db, assignment)
         return assignment
 
 

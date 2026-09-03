@@ -111,6 +111,7 @@ class Assignment(Base):
     status: Mapped[str] = mapped_column(String(24), default="assigned")
     due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     timezone: Mapped[str] = mapped_column(String(80))
+    schedule_version: Mapped[int] = mapped_column(default=1)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
@@ -132,6 +133,10 @@ class StudentAssignmentState(Base):
     __tablename__ = "student_assignment_states"
     __table_args__ = (
         UniqueConstraint("assignment_id", "student_id"),
+        CheckConstraint(
+            "status IN ('assigned','acknowledged','in_progress','blocked','submitted',"
+            "'needs_revision','completed','overdue','cancelled')"
+        ),
         Index("ix_state_student_status_activity", "student_id", "status", "last_activity_at"),
     )
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -187,6 +192,7 @@ class Submission(Base):
 
 class Feedback(Base):
     __tablename__ = "feedback"
+    __table_args__ = (UniqueConstraint("idempotency_key"),)
     id: Mapped[int] = mapped_column(primary_key=True)
     submission_id: Mapped[int] = mapped_column(
         ForeignKey("submissions.id", ondelete="CASCADE"), index=True
@@ -197,6 +203,7 @@ class Feedback(Base):
     teacher_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     student_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     message: Mapped[str] = mapped_column(Text)
+    idempotency_key: Mapped[str | None] = mapped_column(String(160), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
@@ -204,6 +211,9 @@ class Reminder(Base):
     __tablename__ = "reminders"
     __table_args__ = (
         UniqueConstraint("dedupe_key"),
+        CheckConstraint(
+            "status IN ('pending','deferred','sent','skipped','failed','suppressed','cancelled')"
+        ),
         Index("ix_reminder_run", "status", "scheduled_for"),
     )
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -217,6 +227,8 @@ class Reminder(Base):
     status: Mapped[str] = mapped_column(String(20), default="pending")
     reason: Mapped[str] = mapped_column(Text)
     dedupe_key: Mapped[str] = mapped_column(String(180))
+    schedule_version: Mapped[int] = mapped_column(default=1)
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
@@ -267,12 +279,47 @@ class LLMInteraction(Base):
 
 class NotificationDelivery(Base):
     __tablename__ = "notification_deliveries"
+    __table_args__ = (
+        UniqueConstraint("idempotency_key"),
+        CheckConstraint("status IN ('pending','sent','logged','skipped','failed')"),
+    )
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True)
+    school_id: Mapped[int | None] = mapped_column(
+        ForeignKey("schools.id", ondelete="CASCADE"), index=True
+    )
+    classroom_id: Mapped[int | None] = mapped_column(
+        ForeignKey("classrooms.id", ondelete="CASCADE"), index=True
+    )
+    assignment_id: Mapped[int | None] = mapped_column(
+        ForeignKey("assignments.id", ondelete="CASCADE"), index=True
+    )
     chat_id: Mapped[str | None] = mapped_column(String(40))
     kind: Mapped[str] = mapped_column(String(40))
     body: Mapped[str] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(20))
     external_message_id: Mapped[str | None] = mapped_column(String(80))
     error: Mapped[str | None] = mapped_column(Text)
+    idempotency_key: Mapped[str | None] = mapped_column(String(180), nullable=True)
+    attempt_count: Mapped[int] = mapped_column(default=0)
+    last_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class ConversationContext(Base):
+    __tablename__ = "conversation_contexts"
+    __table_args__ = (UniqueConstraint("user_id", "chat_id"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    chat_id: Mapped[str] = mapped_column(String(40), index=True)
+    active_assignment_id: Mapped[int | None] = mapped_column(
+        ForeignKey("assignments.id", ondelete="SET NULL"), nullable=True
+    )
+    pending_action: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    pending_payload_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )

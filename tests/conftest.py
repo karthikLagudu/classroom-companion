@@ -125,6 +125,9 @@ def data(db: Session) -> dict[str, object]:
 @pytest.fixture
 def app(db: Session):
     application = create_app()
+    application.state.session_factory = sessionmaker(
+        bind=db.get_bind(), expire_on_commit=False, autoflush=False
+    )
 
     def override_db():
         yield db

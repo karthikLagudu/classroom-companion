@@ -11,16 +11,18 @@ from app.exceptions import DomainError
 from app.llm.service import LLMService
 from app.models import (
     Assignment,
-    ClassMembership,
     ProcessedTelegramUpdate,
     StudentAssignmentState,
     User,
 )
 from app.services.assignment import AssignmentService
 from app.services.invite import InviteService
+from app.services.notification import NotificationService
 from app.services.progress import ProgressService
 from app.services.submission import SubmissionService
 from app.telegram.client import TelegramClient
+from app.telegram.files import TelegramFileService
+from app.telegram.router import TelegramIntentRouter
 
 logger = logging.getLogger(__name__)
 HELP = (
@@ -35,15 +37,21 @@ class TelegramService:
     def __init__(self, llm: LLMService, client: TelegramClient):
         self.llm = llm
         self.client = client
-        self.assignments = AssignmentService()
+        self.notifications = NotificationService(client)
+        self.assignments = AssignmentService(self.notifications)
         self.progress = ProgressService()
         self.submissions = SubmissionService()
         self.invites = InviteService()
+        self.files = TelegramFileService(client.settings, client)
+        self.intent_router = TelegramIntentRouter(llm, client, self.notifications)
 
     def process(self, db: Session, update: dict) -> dict[str, str | bool]:
-        update_id = int(update.get("update_id", -1))
+        try:
+            update_id = int(update.get("update_id", -1))
+        except (TypeError, ValueError):
+            update_id = -1
         if update_id < 0:
-            return {"ok": False, "error": "missing update_id"}
+            return {"ok": True, "result": "ignored_missing_update_id"}
         if db.get(ProcessedTelegramUpdate, update_id):
             return {"ok": True, "duplicate": True}
         message = update.get("message") or update.get("edited_message")
@@ -51,7 +59,13 @@ class TelegramService:
         if callback:
             message = callback.get("message", {})
             message["from"] = callback.get("from", {})
-            message["text"] = callback.get("data", "").replace(":", " ", 1)
+            action, _, value = callback.get("data", "").partition(":")
+            if action in {"ack", "blocked"}:
+                message["text"] = f"/{action} {value}"
+            elif action == "help":
+                message["text"] = f"/blocked {value} I need help"
+            else:
+                message["text"] = "/help"
         if not message:
             db.add(
                 ProcessedTelegramUpdate(telegram_update_id=update_id, result_reference="ignored")
@@ -90,7 +104,7 @@ class TelegramService:
         message: dict,
         update_id: int,
     ) -> str:
-        parts = shlex.split(text) if text else []
+        parts = shlex.split(text) if text.startswith("/") else []
         command = parts[0].lower() if parts else ""
         if command == "/join":
             if len(parts) != 3:
@@ -102,7 +116,7 @@ class TelegramService:
             if not target:
                 from app.exceptions import InviteError
 
-                raise InviteError("No pre-created student account matches that email")
+                raise InviteError("The invite details could not be verified")
             classroom = self.invites.join(db, target, parts[1], telegram_user_id, chat_id)
             self.client.send(
                 db, target, chat_id, f"Linked as {target.name} to {classroom.name}.", kind="joined"
@@ -161,18 +175,6 @@ class TelegramService:
                 f"Created #{assignment.id}: {assignment.title}, due {assignment.due_at}.",
                 kind="assignment_created",
             )
-            for student in db.scalars(
-                select(User)
-                .join(ClassMembership, ClassMembership.user_id == User.id)
-                .where(ClassMembership.classroom_id == class_id, ClassMembership.role == "student")
-            ):
-                self.client.send(
-                    db,
-                    student,
-                    None,
-                    f"New assignment #{assignment.id}: {assignment.title}\n{assignment.instructions}\nDue: {assignment.due_at}\nUse /ack {assignment.id} or /submit {assignment.id} ...",
-                    kind="assignment",
-                )
             return f"assignment:{assignment.id}"
         if command in {"/ack", "/progress", "/blocked"}:
             if len(parts) < 2:
@@ -204,6 +206,20 @@ class TelegramService:
             photo = photos[-1] if photos else None
             file_data = document or photo
             body = " ".join(parts[2:]) or None
+            stored_path = None
+            original_filename = None
+            mime_type = None
+            content = None
+            if file_data:
+                stored = self.files.download(
+                    str(file_data.get("file_id")),
+                    document.get("file_name") if document else "telegram-photo.jpg",
+                    document.get("mime_type") if document else "image/jpeg",
+                )
+                stored_path = stored.path
+                original_filename = stored.original_filename
+                mime_type = stored.mime_type
+                content = stored.content
             submission = self.submissions.submit(
                 db,
                 user,
@@ -211,12 +227,10 @@ class TelegramService:
                 f"telegram:{update_id}:submission",
                 text_content=body if not file_data else None,
                 telegram_file_id=str(file_data.get("file_id")) if file_data else None,
-                original_filename=document.get("file_name")
-                if document
-                else ("telegram-photo.jpg" if photo else None),
-                mime_type=document.get("mime_type")
-                if document
-                else ("image/jpeg" if photo else None),
+                stored_file_path=stored_path,
+                original_filename=original_filename,
+                mime_type=mime_type,
+                content=content,
             )
             self.client.send(
                 db, user, chat_id, f"Submission #{submission.id} received.", kind="submission"
@@ -234,7 +248,9 @@ class TelegramService:
             )
             self.client.send(db, user, chat_id, summary, kind="status")
             return "status"
-        self.client.send(
-            db, user, chat_id, "I did not recognize that command.\n\n" + HELP, kind="help"
-        )
-        return "unknown"
+        if command.startswith("/"):
+            self.client.send(
+                db, user, chat_id, "I did not recognize that command.\n\n" + HELP, kind="help"
+            )
+            return "unknown"
+        return self.intent_router.route(db, user, chat_id, text, message, update_id)

@@ -12,3 +12,4 @@ htmlcov/
 .coverage
 uploads/*
 !uploads/.gitkeep
+tmp/

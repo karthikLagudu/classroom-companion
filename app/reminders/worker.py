@@ -3,8 +3,6 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from app.database import SessionLocal
-
 logger = logging.getLogger(__name__)
 
 
@@ -18,9 +16,14 @@ async def reminder_loop(app) -> None:
     while True:
         await asyncio.sleep(interval)
         try:
-            with SessionLocal.begin() as db:
+            with app.state.session_factory.begin() as db:
                 created = app.state.reminder_service.run(db)
-            logger.info("reminder_worker_cycle created=%s", len(created))
+                retried = app.state.telegram_client.retry_due(db)
+            logger.info(
+                "reminder_worker_cycle processed=%s delivery_retries=%s",
+                len(created),
+                len(retried),
+            )
         except asyncio.CancelledError:
             raise
         except Exception:

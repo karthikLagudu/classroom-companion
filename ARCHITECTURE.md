@@ -2,86 +2,85 @@
 
 ## Boundaries
 
-The application is split by responsibility:
+- `app/web/auth.py`, `teacher.py`, `student.py`, `coordinator.py`, and `files.py` own HTTP/session/form concerns; `helpers.py` holds shared request helpers.
+- `app/telegram/service.py` validates and deduplicates update envelopes; `router.py` handles conversational intent; `conversation.py` persists short-lived context; `files.py` confines downloads; `client.py` is the Bot API boundary.
+- `app/services` owns authorization, classes/invites, assignment mutations, reference resolution, progress, submissions/feedback, notifications, overdue transitions, risk scoring, and the state machine.
+- `app/reminders/scheduler.py` creates durable versioned jobs, `processor.py` re-reads state and executes them, `policy.py` chooses deterministic actions, and `worker.py` polls safely.
+- `app/llm` defines Pydantic schemas, a provider interface, a current OpenAI Responses implementation, a deterministic test/demo implementation, and interaction logging/error containment.
+- `app/models.py` and `app/database.py` own the relational model, foreign keys, constraints, WAL, and transaction primitives.
 
-- `app/web`: HTTP forms, templates, cookies, CSRF, serialization.
-- `app/telegram`: Telegram update parsing and Bot API delivery.
-- `app/services`: authorization, assignments, progress, submissions, feedback, invites, reminders, state transitions.
-- `app/llm`: provider interface, OpenAI adapter, deterministic demo/test adapter, Pydantic schemas, confidence/error containment.
-- `app/models.py` and `app/database.py`: relational persistence, SQLite configuration, and transaction primitives.
-- `app/reminders`: periodic runner; the same service is callable from CLI and teacher UI.
-
-Handlers do not implement business rules. Each entrypoint resolves an authenticated user, passes supplied IDs through authorization, then calls a service. Services use a caller-owned SQLAlchemy transaction so multi-row operations commit or roll back together.
+Transport handlers never authorize from user-supplied IDs. They first resolve an authenticated actor, restrict candidate queries to that actor’s server-side memberships, then call a domain service. SQLAlchemy sessions are caller-owned so related rows commit or roll back together.
 
 ## Telegram flow
 
-```text
-Telegram
-  -> secret webhook adapter
-  -> persisted update-ID dedupe check
-  -> TelegramService parses transport shape
-  -> LLMService only when natural language is required
-  -> validated structured intent + confidence threshold
-  -> class/school authorization
-  -> domain service and central state machine
-  -> SQLite transaction (domain rows + activity + processed update)
-  -> TelegramClient
-  -> Bot API in real mode OR persisted delivery log in demo mode
+```mermaid
+flowchart TD
+    Telegram --> Webhook
+    Webhook --> Dedupe[Validate envelope + update-ID dedupe]
+    Dedupe --> Router[TelegramIntentRouter]
+    Router --> Commands[Command fast path]
+    Router --> LLM[LLM structured interpretation]
+    Commands --> Context[(ConversationContext)]
+    LLM --> Context
+    Context --> Authorization[Scoped reference resolution + authorization]
+    Authorization --> Domain[Deterministic domain service/state machine]
+    Domain --> DB[(Domain rows + ActivityEvent)]
+    Domain --> NotificationService
+    NotificationService --> TelegramClient
+    TelegramClient --> API[Bot API]
+    TelegramClient --> Log[Log mode / delivery record]
 ```
 
-Unknown Telegram identities can only request help or run the explicit invite-link flow. Telegram display names are never identity evidence. Commands and callback data use the same path.
+Unknown senders can use only help and `/join CODE EMAIL`. Callback buttons are translated into the same command path; they do not mutate state directly. Ambiguous references produce choices. A 30-minute context can hold an active assignment or pending file submission, but it is always re-authorized when consumed.
 
 ## Reminder flow
 
-```text
-FastAPI lifespan loop / CLI / teacher button
-  -> ReminderService
-  -> active per-student assignment states from SQLite
-  -> deterministic ReminderDecision
-  -> unique daily dedupe lookup
-  -> LLM wording from policy-selected facts
-  -> TelegramClient
-  -> reminder + notification delivery persisted
+```mermaid
+flowchart TD
+    Assignment[Assignment create/deadline update] --> Scheduler[ReminderScheduler]
+    Scheduler --> Jobs[(24h + 2h versioned jobs)]
+    Jobs --> Worker[ReminderWorker / CLI / scoped manual trigger]
+    Worker --> Processor[ReminderProcessor re-reads current rows]
+    Processor --> OverdueService
+    OverdueService --> Policy[ReminderPolicy]
+    Policy --> Suppress[suppress]
+    Policy --> Defer[defer to quiet-hours end]
+    Policy --> Send[send]
+    Defer --> Jobs
+    Send --> Wording[LLM wording with deterministic fallback]
+    Wording --> NotificationService
 ```
 
-The model words a policy-approved message; it does not decide who receives it. Restart recovery comes from querying persistent active states and unique reminder keys, rather than depending on an in-memory job list.
+The database, not memory, is the durable queue. A deadline edit increments `Assignment.schedule_version`, cancels pending/deferred jobs from prior versions, and adds new 24-hour and 2-hour jobs with versioned unique keys. Processing cancels stale versions, transitions eligible states to overdue before policy evaluation, never sends during school-local quiet hours, suppresses cancelled/submitted/completed work, and frequency-limits blocker follow-ups.
 
-## Browser flow
+The background worker passes no scope and is the system-wide actor. Web callers calculate authorized class IDs from memberships and pass that set into the same processor. A user-supplied class ID is never used as reminder authority.
 
-```text
-Browser
-  -> FastAPI/Jinja route
-  -> signed HTTP-only cookie + CSRF validation
-  -> current database user
-  -> school/class/student authorization service
-  -> domain service/state machine
-  -> SQLite transaction
-  -> redirect-after-POST to server-rendered status
-```
+## Notification lifecycle
 
-Every state-changing form uses POST plus a synchronizer token stored inside the signed session. Assignment and submission forms also carry operation UUIDs for double-click safety.
+`NotificationService` is the only assignment-related message boundary. Creation, deadline changes, instruction clarification, cancellation, feedback, and reminders all persist `NotificationDelivery` with `school_id`, `classroom_id`, `assignment_id`, recipient, status, body, idempotency key, attempts, and errors. An unlinked student is `skipped`; log mode is `logged`; real Bot API success is `sent`; failures are `failed` and receive bounded 1/5/15-minute retries.
 
-## Transactions and consistency
+Teacher delivery queries are restricted to assigned class IDs; coordinators may also see school-scoped deliveries for their coordinator schools. External failure does not invalidate a correct domain mutation. The single-process take-home records the intent and failure in the same application transaction; production should use a transactional outbox so a crash between commit and delivery is recoverable without ambiguity.
 
-- Assignment creation: assignment, all targets, all student states, baseline reminder schedules, activity event, and idempotency record.
-- Submission: submission, student state transition, and activity event.
-- Feedback: feedback, review outcome transition, activity event, and delivery log.
-- Deadline update: assignment timestamp, cancellation of pending reminders, replacement schedules, and activity event.
-- Telegram update: domain operation, outbound delivery records, and processed-update marker.
+## File flow
 
-SQLAlchemy parameterizes SQL. Foreign keys and delete behavior protect references. Unique constraints protect Telegram updates, invites, targets/states, operation keys, submission retries, and reminder retries.
+Telegram document/photo -> `getFile` -> authenticated Bot API download -> streamed size check -> UUID filename under resolved `UPLOAD_DIR` -> SHA-256 hash -> idempotent `Submission`. The original filename is metadata only. Browser uploads use the same path-confinement and byte limit principles.
+
+Files are not mounted as public static data. `GET /submissions/{id}/file` loads the stored path only after teacher-class or student-owner authorization, verifies the resolved path remains below `UPLOAD_DIR`, and returns 404 for absent/out-of-root files. Images are served inline for previews; other files are attachments.
+
+## Transactions and idempotency
+
+- Assignment creation: assignment, targets, independent states, two jobs per student, activity, operation key, and contextual delivery rows.
+- Deadline update: aware future-time validation, version increment, prior-job cancellation, replacements, activity, operation key, and student deliveries.
+- Submission: authorized assignment, unique transport/form key, content hash, state transition, and activity.
+- Feedback: unique form key, feedback, review transition, activity, and delivery.
+- Telegram: unique update ID plus result reference; duplicate callbacks/messages exit before dispatch.
+
+Database uniqueness protects update IDs, operation keys, targets/states, submissions, feedback keys, reminder keys, delivery keys, memberships, and conversation `(user_id, chat_id)`.
 
 ## LLM safety boundary
 
-Allowed: intent classification, field/date extraction, progress interpretation, factual summarization, supportive wording.
-
-Forbidden: authorization, arbitrary IDs, SQL, direct writes, transition decisions, membership creation, or arbitrary delivery. Parsed data must satisfy Pydantic types, aware deadlines, allowed literals, length limits, and confidence. Errors become clarification without domain mutation.
-
-## Observability
-
-HTTP responses include `x-request-id`; Telegram logs include `update_id`. Domain activity, LLM input/output metadata, reminder reason/status, and delivery status/error are persistent. Logs name important failures while avoiding secrets and password contents.
+The model may classify intent, extract human references and relative deadlines, parse progress, summarize already-authorized risk items, and phrase a policy-approved reminder. It may not select database IDs, authorize, execute SQL, create memberships, mutate state, bypass transitions, or send messages. Pydantic schemas, aware-time validation, a confidence threshold, scoped reference resolution, and domain services contain bad output. Every model operation records success or an error type without API keys.
 
 ## Deployment shape
 
-The take-home runs one FastAPI process and one SQLite database. With multiple replicas, disable the in-process loop and move policy evaluation to a durable single-consumer worker. The production shape uses PostgreSQL, an outbox, a queue, idempotent workers, object storage, secret management, rate limits, and centralized telemetry.
-
+The take-home is intentionally one FastAPI process, SQLite/WAL, a polling task, and local files. Production uses PostgreSQL + Alembic, an outbox, a durable queue, distributed workers with leases, object storage/malware scanning, managed identity, rate limits, secret management, and centralized logs/metrics/traces.

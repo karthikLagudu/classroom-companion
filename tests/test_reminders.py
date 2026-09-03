@@ -9,13 +9,14 @@ from app.services.reminder import decide_reminder
 
 def test_blocked_and_silent_have_different_decisions(db, data):
     now = datetime.now(UTC)
+    data["assignment"].due_at = now + timedelta(hours=20)
     blocked = get_student_state(db, data["assignment"].id, data["student1"].id)
     silent = get_student_state(db, data["assignment"].id, data["student2"].id)
     blocked.status = "blocked"
     blocked.block_reason = "No laptop"
     blocked.last_activity_at = now
     assert decide_reminder(blocked, data["assignment"], now).reminder_type == "blocked_support"
-    assert decide_reminder(silent, data["assignment"], now).reminder_type == "silent_checkin"
+    assert decide_reminder(silent, data["assignment"], now).reminder_type == "silent_due_soon"
 
 
 def test_completed_assignment_suppresses_normal_reminder(db, data):
@@ -26,12 +27,17 @@ def test_completed_assignment_suppresses_normal_reminder(db, data):
 
 
 def test_runner_creates_different_reminders(app, db, data):
+    from app.reminders.scheduler import ReminderScheduler
+
+    now = datetime.now(UTC)
+    data["assignment"].due_at = now + timedelta(hours=20)
+    ReminderScheduler().schedule_assignment(db, data["assignment"], now)
     state = get_student_state(db, data["assignment"].id, data["student1"].id)
     state.status = "blocked"
     state.block_reason = "Need help"
-    state.last_activity_at = datetime.now(UTC)
-    reminders = app.state.reminder_service.run(db)
-    assert {item.reminder_type for item in reminders} == {"blocked_support", "silent_checkin"}
+    state.last_activity_at = now
+    reminders = app.state.reminder_service.run(db, now=now)
+    assert {item.reminder_type for item in reminders} == {"blocked_support", "silent_due_soon"}
 
 
 def test_deadline_update_cancels_and_reschedules_pending_reminders(db, data):
@@ -57,5 +63,5 @@ def test_deadline_update_cancels_and_reschedules_pending_reminders(db, data):
             )
         )
     )
-    assert len(pending) == 2
+    assert len(pending) == 4
     assert all(item.dedupe_key != "old-reminder" for item in pending)

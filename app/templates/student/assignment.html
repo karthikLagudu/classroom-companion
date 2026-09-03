@@ -38,7 +38,7 @@
   <section class="card">
     <p class="eyebrow">HISTORY</p>
     <h2>Submission history</h2>
-    <div class="list">{% for s in submissions %}<div class="list-row"><div><strong>{{ s.original_filename or s.text_content or 'Telegram file' }}</strong><span>{{ s.created_at.strftime('%d %b, %I:%M %p') }} · {{ s.submission_type }}</span></div></div>{% else %}<p class="empty">Nothing submitted yet.</p>{% endfor %}</div>
+    <div class="list">{% for s in submissions %}<div class="list-row"><div><strong>{{ s.original_filename or s.text_content or 'Telegram file' }}</strong><span>{{ s.created_at.strftime('%d %b, %I:%M %p') }} · {{ s.submission_type }}</span>{% if s.stored_file_path %}<a href="/submissions/{{ s.id }}/file">View submitted file</a>{% endif %}</div></div>{% else %}<p class="empty">Nothing submitted yet.</p>{% endfor %}</div>
   </section>
   <section class="card">
     <p class="eyebrow">FEEDBACK</p>
@@ -49,6 +49,6 @@
 <section class="card">
   <p class="eyebrow">ACTIVITY</p>
   <h2>Your progress updates</h2>
-  <div class="timeline">{% for p in progress %}<div><i></i><p><strong>{{ p.status|replace('_',' ')|title }}</strong><span>{{ p.created_at.strftime('%d %b, %I:%M %p') }} · {{ p.message }}</span></p></div>{% else %}<p class="empty">Your check-ins will appear here.</p>{% endfor %}</div>
+  <div class="timeline">{% for p in progress %}<div><i></i><p><strong>{{ p.event_type|replace('_',' ')|title }}</strong><span>{{ p.created_at.strftime('%d %b, %I:%M %p') }} · {{ p.message }}</span></p></div>{% else %}<p class="empty">Your check-ins will appear here.</p>{% endfor %}</div>
 </section>
 {% endblock %}

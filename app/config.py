@@ -24,9 +24,11 @@ class Settings(BaseSettings):
     telegram_webhook_secret: str = "change-me"
     upload_dir: Path = Path("uploads")
     max_upload_bytes: int = Field(default=10 * 1024 * 1024, ge=1)
-    quiet_hour_start: int = Field(default=21, ge=0, le=23)
+    quiet_hour_start: int = Field(default=22, ge=0, le=23)
     quiet_hour_end: int = Field(default=7, ge=0, le=23)
     reminder_interval_seconds: int = Field(default=300, ge=0)
+    conversation_context_minutes: int = Field(default=30, ge=1, le=1440)
+    notification_max_attempts: int = Field(default=3, ge=1, le=10)
 
 
 @lru_cache

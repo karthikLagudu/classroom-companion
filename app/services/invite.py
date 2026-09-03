@@ -39,6 +39,8 @@ class InviteService:
         )
         if existing_tg:
             raise InviteError("This Telegram account is already linked")
+        if user.telegram_user_id and user.telegram_user_id != telegram_user_id:
+            raise InviteError("This student account is already linked")
         existing = db.scalar(
             select(ClassMembership).where(
                 ClassMembership.classroom_id == classroom.id,

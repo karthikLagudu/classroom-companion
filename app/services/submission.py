@@ -6,10 +6,11 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import ActivityEvent, Feedback, Submission, User
+from app.models import ActivityEvent, Assignment, Feedback, Submission, User
 from app.services.assignment import get_student_state
 from app.services.authorization import require_student_assignment, require_teacher_submission
 from app.services.state_machine import transition
+from app.services.notification import NotificationService
 
 
 class SubmissionService:
@@ -74,10 +75,29 @@ class SubmissionService:
 
 
 class FeedbackService:
+    def __init__(self, notifications: NotificationService | None = None):
+        self.notifications = notifications
+
     def create(
-        self, db: Session, teacher: User, submission_id: int, message: str, complete: bool = False
+        self,
+        db: Session,
+        teacher: User,
+        submission_id: int,
+        message: str,
+        complete: bool = False,
+        idempotency_key: str | None = None,
     ) -> Feedback:
         submission = require_teacher_submission(db, teacher, submission_id)
+        if idempotency_key:
+            existing = db.scalar(
+                select(Feedback).where(Feedback.idempotency_key == idempotency_key)
+            )
+            if existing:
+                if existing.teacher_id != teacher.id or existing.submission_id != submission_id:
+                    from app.exceptions import AuthorizationError
+
+                    raise AuthorizationError("Idempotency key belongs to another operation")
+                return existing
         assignment = require_student_assignment(
             db, db.get(User, submission.student_id), submission.assignment_id
         )
@@ -87,8 +107,10 @@ class FeedbackService:
             teacher_id=teacher.id,
             student_id=submission.student_id,
             message=message.strip(),
+            idempotency_key=idempotency_key,
         )
         db.add(feedback)
+        db.flush()
         state = get_student_state(db, submission.assignment_id, submission.student_id)
         transition(state, "completed" if complete else "needs_revision", datetime.now(UTC))
         db.add(
@@ -102,4 +124,14 @@ class FeedbackService:
                 metadata_json={"submission_id": submission.id, "complete": complete},
             )
         )
+        if self.notifications:
+            assignment = db.get(Assignment, submission.assignment_id)
+            student = db.get(User, submission.student_id)
+            self.notifications.notify_feedback(
+                db,
+                assignment,
+                student,
+                feedback.message,
+                f"feedback:{idempotency_key or feedback.id}",
+            )
         return feedback

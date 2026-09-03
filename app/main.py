@@ -19,6 +19,8 @@ from app.exceptions import AuthorizationError, DomainError, NotFoundError
 from app.llm.service import LLMService
 from app.reminders.worker import reminder_loop
 from app.services.reminder import ReminderService
+from app.services.assignment import AssignmentService
+from app.services.notification import NotificationService
 from app.telegram.client import TelegramClient
 from app.telegram.service import TelegramService
 from app.web.router import router as web_router
@@ -41,19 +43,23 @@ async def lifespan(app: FastAPI):
             await worker
         except asyncio.CancelledError:
             pass
+        app.state.telegram_client.close()
 
 
 def create_app() -> FastAPI:
     app = FastAPI(title=settings.app_name, lifespan=lifespan)
     app.state.settings = settings
+    app.state.session_factory = SessionLocal
     provider = build_llm_provider(settings)
     telegram_client = TelegramClient(settings)
     app.state.sessions = SessionManager(settings)
     app.state.templates = Jinja2Templates(directory="app/templates")
     app.state.llm_service = LLMService(provider)
     app.state.telegram_client = telegram_client
+    app.state.notification_service = NotificationService(telegram_client)
+    app.state.assignment_service = AssignmentService(app.state.notification_service)
     app.state.telegram_service = TelegramService(app.state.llm_service, telegram_client)
-    app.state.reminder_service = ReminderService(provider, telegram_client)
+    app.state.reminder_service = ReminderService(provider, telegram_client, settings)
     app.mount("/static", StaticFiles(directory="app/static"), name="static")
     app.include_router(web_router)
 
@@ -89,7 +95,7 @@ def create_app() -> FastAPI:
 
     @app.get("/health")
     def health():
-        with SessionLocal() as db:
+        with app.state.session_factory() as db:
             db.execute(__import__("sqlalchemy").text("SELECT 1"))
         return {
             "status": "ok",
@@ -101,8 +107,14 @@ def create_app() -> FastAPI:
     async def telegram_webhook(secret: str, request: Request):
         if not __import__("secrets").compare_digest(secret, settings.telegram_webhook_secret):
             return JSONResponse(status_code=404, content={"detail": "Not found"})
-        update = await request.json()
-        with SessionLocal.begin() as db:
+        try:
+            update = await request.json()
+        except Exception:
+            logger.warning("telegram_webhook_malformed_json")
+            return {"ok": True, "result": "ignored_malformed_json"}
+        if not isinstance(update, dict):
+            return {"ok": True, "result": "ignored_malformed_update"}
+        with app.state.session_factory.begin() as db:
             return app.state.telegram_service.process(db, update)
 
     return app

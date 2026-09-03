@@ -1,46 +1,71 @@
 # Product reasoning
 
-## Identity
+## Identity and onboarding
 
-User identity is the application account; Telegram identity is a unique link to it. Handles and display names can change and do not need to match school records. A sender who messages before linking receives `/join CODE EMAIL` guidance. Email is included because an open class code alone cannot safely decide which pre-created student record to attach. Linking validates invite state, expiry/use limit, school boundary, current membership, and uniqueness of the Telegram ID. In a production rollout, the email would be replaced by a short-lived per-student token or authenticated deep link.
+Application users are canonical identities; Telegram IDs are unique links to those accounts. Handles and display names are mutable and are not school evidence. `/join CODE EMAIL` deliberately combines a class capability with a pre-created student identity. The same generic response is used when details cannot be verified, limiting account enumeration. Invites enforce active state, expiry, use limits, school consistency, existing memberships, and Telegram uniqueness. A real pilot should replace email with a short-lived per-student deep-link token.
 
-## Roles and access
+Coordinators and teachers can create a class inside a school where they already hold the corresponding school role. The creator receives a teacher class membership. Authorized teachers/coordinators can pre-create a student with a temporary password, add school/class memberships, and create or disable invites. This is enough for the interview scenario without turning the take-home into a school administration suite. Temporary passwords are entered by the operator and never displayed again.
 
-Roles are rows at school/class scope. A person may be coordinator and teacher, teach several classes, or teach one class while being unable to read another. Coordinators inherit access only inside their school. Students pass both class membership and assignment-target checks. Returning a generic wrong-scope error avoids confirming unrelated data exists.
+## Roles, access, and privacy
+
+Roles are scoped rows, not global flags. A person can coordinate one school, teach several classes, and share a class with another teacher. Coordinators inherit class access only inside their school; teachers require a class membership. Students require both a student class membership and assignment target. All paths—including Telegram references and file routes—apply the same server-side rules.
+
+Candidate assignment queries are restricted before title matching. Explicit ID, normalized exact, prefix, and simple token overlap are used in that order. Zero matches and tied matches are non-mutating clarification outcomes. This avoids the dangerous pattern of choosing globally and filtering afterward.
+
+`NotificationDelivery` carries school/class/assignment context. Teachers see only deliveries for assigned classes; coordinators can see their school scope. Bodies from another tenant never reach the result set.
 
 ## Lifecycle
 
-The assignment has a shared lifecycle (`draft/assigned/cancelled`), while each targeted student has an independent state. A central transition map rejects impossible jumps. Submission is an application operation that safely applies two legal transitions when necessary; feedback deterministically selects revision or completion. Overdue is a student-state condition, not a mutation of every classmate at once.
+`Assignment.status` controls shared draft/assigned/cancelled lifecycle, while every target has an independent `StudentAssignmentState`. One central map rejects invalid transitions. Submission safely walks an assigned/acknowledged state through `in_progress` to `submitted`; feedback moves submitted work to `needs_revision` or `completed`.
 
-## Time
+Overdue is evaluated immediately before a due reminder job. `assigned`, `acknowledged`, `in_progress`, `blocked`, and `needs_revision` become `overdue` after the deadline, with a `student_assignment_overdue` activity event. Submitted, completed, and cancelled states never become overdue. A blocker before the deadline receives supportive blocker handling; after the deadline the visible status is overdue while its stored blocker reason remains available to the teacher.
 
-Schools have an IANA timezone; assignments store that timezone and an aware UTC deadline. The real model resolves phrases using the supplied current instant and school timezone. Demo mode supports tomorrow morning/evening, weekdays/next weekdays, and AM/PM. Deadline comparisons use UTC. Quiet-hour configuration is included, but deferral is left for the durable production worker because silently delaying the take-home demo would make manual verification confusing.
+## Time and quiet hours
 
-## Corrections
+All stored instants are UTC; each school has an IANA timezone. Real LLM parsing receives the current aware instant and school timezone. Fake mode deterministically maps morning to 09:00 and evening to 18:00 and supports named weekdays. Deterministic validation rejects naive or past deadlines after interpretation.
 
-Teachers can revise instructions, move a deadline, or cancel. A deadline update cancels every pending schedule and creates versioned replacement keys. Cancellation closes non-final student states and pending reminders. Every correction creates an activity event; production would also send deterministic correction notifications.
+Quiet hours default to 22:00-07:00 in the school timezone. No reminder is sent in that interval—even if already overdue—because predictable no-send behavior is safer for students than inventing an urgency exception. A due job is moved to the next local 07:00 and remains durable. This makes the eventual delay explicit in the job row.
 
-## Duplicates
+## Reminder policy
 
-Telegram updates have a unique update ID and are marked only with their transaction. Submissions and assignment POSTs use unique operation keys; repeating a key returns the original result. Reminder keys encode policy, assignment, student, and day. This handles webhook retries and double taps. Cross-operation reuse is rejected. Real Telegram delivery at exactly-once semantics would require a transactional outbox; the current API boundary is at-least-once with persistent intent/delivery evidence.
+Creating an assignment writes two durable jobs per target: 24 hours and 2 hours before the deadline. Creating work inside either window schedules that job immediately. A deadline edit increments the schedule version, cancels pending/deferred jobs, and creates versioned replacements. The database survives restarts and is the queue source of truth.
 
-## Privacy
+At execution, current state is re-read:
 
-Student queries always filter on authenticated `user.id`; teacher queries require a coordinator-school or teacher-class membership. The same authorization functions are used by web and Telegram. Hidden links are only presentation. Upload names are stripped, content is UUID-named within a resolved directory, and size-limited.
+1. cancelled/completed/submitted -> suppress;
+2. quiet hours -> defer;
+3. eligible and past due -> transition to overdue;
+4. blocked -> supportive `blocked_support`, frequency-limited to 12 hours;
+5. overdue -> limited `overdue` wording;
+6. within 2 hours -> high-priority `due_within_2h`;
+7. within 24 hours with no activity -> `silent_due_soon`;
+8. within 24 hours with activity -> `gentle_due_soon`;
+9. farther away -> suppress.
 
-## Failures
+The LLM only phrases a selected reminder. Provider failure uses a factual deterministic fallback and is logged. No daily silence message is generated when a deadline is far away.
 
-- LLM: schema, aware-time, enum, length, and confidence validation; safe clarification; interaction log; no assignment write.
-- Telegram: delivery status/error persisted and exception logged; log mode makes the demo observable without a token.
-- Database: short caller-owned transactions, foreign keys, uniqueness constraints, WAL, and rollback on exceptions.
-- Files: path confinement and byte limit; Telegram file metadata is preserved even when binary download is unavailable.
-- Invalid commands/missing context: a helpful, non-leaking command guide.
+## Conversation context
 
-## Reminders
+Informal references (“move it”) and separately arriving photos need short-lived state. `ConversationContext` is unique per user/chat and stores an active assignment, pending action, optional payload, and expiry. Thirty minutes is long enough for a normal chat exchange and short enough to reduce stale-action risk. Context is set when a linked student receives a new assignment and after an interaction. Every read checks expiry and every use re-authorizes the assignment. Ambiguous sensitive actions still require clarification.
 
-Blocked and silent are different product problems. Blocked students receive acknowledgement/support language and appear as explicit teacher risk. Silent students receive a low-pressure request for a status or blocker. Submitted/completed/cancelled states are suppressed. A daily dedupe key is a simple anti-spam ceiling; deadline edits version baseline schedules. The model only phrases a reminder after deterministic policy selects the recipient/type/facts.
+“Here’s my homework” sets `pending_action=submission`; the following document/photo is downloaded and attached to that authorized assignment. A file without valid context is acknowledged and the student is asked to identify the assignment rather than silently discarding or misrouting it.
 
-## Product and infrastructure trade-offs
+## Risk engine
 
-The web UI is intentionally for visibility and light operations; Telegram remains the primary surface. SQLite, Jinja, signed sessions, log delivery mode, and an in-process worker keep a 2-3 day project runnable from a clean checkout. The boundaries—provider interface, services, transaction ownership, outbox-shaped delivery table—leave a clear migration to managed identity, PostgreSQL, queue workers, object storage, and production observability.
+Risk selection is deterministic. Blocked adds 70, overdue adds 80, due within 24 hours adds 30, no acknowledgement adds 25, and inactivity beyond two days adds 20; recent activity subtracts 10. Scores are clamped to 0-100, submitted/completed/cancelled states are excluded, and items below 25 are omitted. Levels are medium (25-59), high (60-79), and critical (80-100). Only these already-authorized structured facts go to the LLM for concise prose; the model never decides who is at risk.
 
+## Duplicates and failure handling
+
+Telegram update IDs, assignment operation keys, submission keys, feedback keys, delivery keys, reminder keys, targets, states, and memberships are database-unique. Deadline keys and `schedule_version` make repeated updates harmless. Callback buttons use the same deduplicated command path.
+
+A valid domain operation is preserved when Telegram fails. The client records `failed`, error type/text, attempt count, and next attempt without recursively trying to report failure through the broken channel. The worker retries at 1, 5, and 15 minutes, capped by configuration. Unlinked recipients are `skipped`; log mode is explicitly `logged`. In production, notification intent belongs in a transactional outbox committed atomically with domain state, then delivered by a queue worker.
+
+LLM calls record operation, actor, input, validated output, confidence, success, and a safe error type. Secrets are never included. Low confidence, invalid structure, or provider errors return clarification/factual fallback instead of mutation. Malformed or unsupported Telegram updates return safe 200-class ignored results so Telegram does not retry forever.
+
+## File safety
+
+Telegram files use `getFile`, bounded HTTP timeouts, a streamed byte limit, UUID storage names, path confinement, SHA-256 hashes, and transport idempotency. Original names are metadata only. Upload storage is not public static content: an authenticated route resolves a `Submission`, applies teacher/student authorization, rechecks that its stored path is below `UPLOAD_DIR`, and then serves it. A production version adds object storage, antivirus/content scanning, signed short-lived URLs, retention, and image transformations.
+
+## SQLite and production migration
+
+SQLite is appropriate for a single-process 2-3 day take-home: foreign keys, WAL, busy timeout, short transactions, and uniqueness constraints provide a runnable persistent slice. It is not a distributed scheduler or multi-writer production database. `create_all` is acceptable for fresh demo/test databases, but production must move to PostgreSQL with Alembic, an outbox, durable queue, leased/distributed workers, object storage, managed identity, secret management, and centralized observability.

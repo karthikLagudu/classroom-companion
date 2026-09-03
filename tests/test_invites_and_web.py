@@ -31,3 +31,20 @@ def test_state_changing_web_request_requires_csrf(client, app, data):
     authenticate(client, app, data["teacher1"].id)
     response = client.post("/teacher/reminders/run", data={"csrf_token": "wrong"})
     assert response.status_code == 403
+
+
+def test_coordinator_has_school_dashboard(client, app, db, data):
+    from app.models import SchoolMembership
+
+    db.add(
+        SchoolMembership(
+            school_id=data["school1"].id,
+            user_id=data["teacher1"].id,
+            role="coordinator",
+        )
+    )
+    db.commit()
+    authenticate(client, app, data["teacher1"].id)
+    response = client.get("/coordinator")
+    assert response.status_code == 200
+    assert "Create a class" in response.text

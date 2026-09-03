@@ -7,7 +7,7 @@ from app.exceptions import LLMInterpretationError
 from app.llm.base import LLMProvider
 from app.llm.schemas import AssignmentIntent
 from app.llm.service import LLMService
-from app.models import Assignment
+from app.models import Assignment, LLMInteraction
 
 
 class BrokenProvider(LLMProvider):
@@ -44,3 +44,12 @@ def test_invalid_or_low_confidence_llm_causes_no_assignment_mutation(db, data, p
         )
     db.flush()
     assert db.scalar(select(func.count()).select_from(Assignment)) == before
+
+
+def test_student_intent_failure_is_logged(db, data):
+    with pytest.raises(LLMInterpretationError):
+        LLMService(BrokenProvider()).student_intent(db, data["student1"].id, "unclear")
+    row = db.scalar(
+        select(LLMInteraction).where(LLMInteraction.operation == "student_intent")
+    )
+    assert row and row.success is False and row.error == "NotImplementedError"

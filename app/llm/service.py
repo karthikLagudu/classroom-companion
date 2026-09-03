@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.exceptions import LLMInterpretationError
 from app.llm.base import LLMProvider
-from app.llm.schemas import AssignmentIntent, ProgressIntent
+from app.llm.schemas import AssignmentIntent, ProgressIntent, StudentIntent, TeacherIntent
 from app.models import LLMInteraction
 
 
@@ -87,9 +87,101 @@ class LLMService:
             db.flush()
             return parsed
         except LLMInterpretationError:
+            db.add(
+                LLMInteraction(
+                    operation="progress",
+                    actor_user_id=actor_id,
+                    input_text=text,
+                    output_json=None,
+                    confidence=None,
+                    success=False,
+                    error="clarification_required",
+                )
+            )
+            db.flush()
             raise
         except Exception as exc:
+            db.add(
+                LLMInteraction(
+                    operation="progress",
+                    actor_user_id=actor_id,
+                    input_text=text,
+                    output_json=None,
+                    confidence=None,
+                    success=False,
+                    error=type(exc).__name__,
+                )
+            )
+            db.flush()
             raise LLMInterpretationError("Please clarify your progress update.") from exc
+
+    def teacher_intent(
+        self, db: Session, actor_id: int, text: str, timezone_name: str, now: datetime
+    ) -> TeacherIntent:
+        return self._intent(
+            db,
+            "teacher_intent",
+            actor_id,
+            text,
+            lambda: self.provider.interpret_teacher(text, timezone_name, now),
+        )
+
+    def student_intent(self, db: Session, actor_id: int, text: str) -> StudentIntent:
+        return self._intent(
+            db,
+            "student_intent",
+            actor_id,
+            text,
+            lambda: self.provider.interpret_student(text),
+        )
+
+    def _intent(self, db: Session, operation: str, actor_id: int, text: str, parser):
+        try:
+            parsed = parser()
+            if parsed.requires_clarification or parsed.confidence < self.minimum_confidence:
+                raise LLMInterpretationError(
+                    parsed.clarification_question or "Please clarify what you want to do."
+                )
+            db.add(
+                LLMInteraction(
+                    operation=operation,
+                    actor_user_id=actor_id,
+                    input_text=text,
+                    output_json=parsed.model_dump(mode="json"),
+                    confidence=round(parsed.confidence * 100),
+                    success=True,
+                )
+            )
+            db.flush()
+            return parsed
+        except LLMInterpretationError:
+            db.add(
+                LLMInteraction(
+                    operation=operation,
+                    actor_user_id=actor_id,
+                    input_text=text,
+                    output_json=None,
+                    confidence=None,
+                    success=False,
+                    error="clarification_required",
+                )
+            )
+            db.flush()
+            raise
+        except Exception as exc:
+            db.add(
+                LLMInteraction(
+                    operation=operation,
+                    actor_user_id=actor_id,
+                    input_text=text,
+                    output_json=None,
+                    confidence=None,
+                    success=False,
+                    error=type(exc).__name__,
+                )
+            )
+            db.flush()
+            raise LLMInterpretationError("I could not understand that safely. Please clarify.") from exc
 
     def risk_summary(self, db: Session, actor_id: int, facts: list[str]) -> str:
         """Summarize authorized facts; a provider failure must not hide the risk list."""

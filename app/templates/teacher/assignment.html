@@ -16,6 +16,7 @@
     <p class="eyebrow">SCHEDULE</p>
     <h2>Deadline</h2>
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="idempotency_key" value="{{ deadline_key }}">
     <label>New local deadline<input type="datetime-local" name="due_at" required></label>
     <button>Update deadline</button>
   </form>
@@ -23,6 +24,7 @@
     <p class="eyebrow">CLARITY</p>
     <h2>Instructions</h2>
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="idempotency_key" value="{{ instructions_key }}">
     <label>Student-facing instructions<textarea name="instructions" rows="4" required>{{ assignment.instructions }}</textarea></label>
     <button>Save clarification</button>
   </form>
@@ -30,6 +32,7 @@
     <p class="eyebrow">CLOSE</p>
     <h2>Cancel assignment</h2>
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="idempotency_key" value="{{ cancel_key }}">
     <p class="muted">Stops future reminders and closes active student states.</p>
     <button class="danger-button">Cancel assignment</button>
   </form>
@@ -42,6 +45,18 @@
     {% for state, student in state_rows %}<div class="tr"><span><strong>{{ student.name }}</strong></span><span><b class="badge {{ state.status }}">{{ state.status|replace('_',' ') }}</b></span><span>{{ state.last_activity_at.strftime('%d %b, %I:%M %p') if state.last_activity_at else 'No response yet' }}</span><span>{{ state.block_reason or 'Clear' }}</span></div>{% else %}<p class="empty">No student states have been created.</p>{% endfor %}
   </div>
 </section>
+<div class="grid two-one">
+  <section class="card">
+    <p class="eyebrow">AUTOMATION</p>
+    <h2>Reminder jobs</h2>
+    <div class="list">{% for r in reminders %}<div class="list-row"><div><strong>{{ r.reminder_type|replace('_',' ')|title }}</strong><span>Student #{{ r.student_id }} · {{ r.scheduled_for.strftime('%d %b, %I:%M %p') }} · version {{ r.schedule_version }}</span></div><b class="badge {{ r.status }}">{{ r.status }}</b></div>{% else %}<p class="empty">No reminder jobs.</p>{% endfor %}</div>
+  </section>
+  <section class="card">
+    <p class="eyebrow">DELIVERY</p>
+    <h2>Student notifications</h2>
+    <div class="timeline">{% for d in deliveries %}<div><i></i><p><strong>{{ d.kind|replace('_',' ')|title }}</strong><span>{{ d.status }} · student #{{ d.user_id }} · {{ d.body[:90] }}{% if d.body|length > 90 %}…{% endif %}</span></p></div>{% else %}<p class="empty">No notifications yet.</p>{% endfor %}</div>
+  </section>
+</div>
 <section class="card">
   <p class="eyebrow">REVIEW</p>
   <h2>Submissions</h2>
@@ -49,9 +64,11 @@
     <div>
       <strong>{{ s.original_filename or s.text_content or ('Telegram file ' ~ s.telegram_file_id) }}</strong>
       <span>Student #{{ s.student_id }} · {{ s.created_at.strftime('%d %b, %I:%M %p') }}</span>
+      {% if s.stored_file_path and s.mime_type and s.mime_type.startswith('image/') %}<a href="/submissions/{{ s.id }}/file"><img class="submission-preview" src="/submissions/{{ s.id }}/file" alt="Preview of {{ s.original_filename or 'student submission' }}"></a>{% elif s.stored_file_path %}<a class="file-link" href="/submissions/{{ s.id }}/file">View {{ s.original_filename or 'submitted file' }} · {{ s.mime_type or 'file' }}</a>{% endif %}
     </div>
     <form method="post" action="/teacher/submissions/{{ s.id }}/feedback" class="feedback-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="idempotency_key" value="{{ feedback_keys[s.id] }}">
       <textarea name="message" placeholder="Specific, supportive feedback" required></textarea>
       <select name="outcome"><option value="revision">Needs revision</option><option value="complete">Complete</option></select>
       <button>Send feedback</button>

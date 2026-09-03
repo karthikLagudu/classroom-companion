@@ -11,6 +11,30 @@
 </div>
 <div class="grid two-one">
   <section class="card">
+    <p class="eyebrow">ONBOARD</p>
+    <h2>Add a student</h2>
+    <form method="post" action="/teacher/classes/{{ classroom.id }}/students" class="stack">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>Name<input name="name" required></label>
+      <label>Email<input type="email" name="email" required></label>
+      <label>Temporary password<input type="password" name="temporary_password" minlength="10" required></label>
+      <button>Add student</button>
+    </form>
+  </section>
+  <section class="card">
+    <p class="eyebrow">TELEGRAM LINKING</p>
+    <h2>Invite codes</h2>
+    <form method="post" action="/teacher/classes/{{ classroom.id }}/invites" class="inline-form compact">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>Days<input type="number" name="expires_in_days" value="7" min="1"></label>
+      <label>Uses<input type="number" name="max_uses" value="20" min="1"></label>
+      <button>Generate invite</button>
+    </form>
+    <div class="list">{% for invite in invites %}<div class="list-row"><div><strong>{{ invite.code }}</strong><span>{{ 'Active' if invite.active else 'Disabled' }} · {{ invite.use_count }}/{{ invite.max_uses or '∞' }} uses{% if invite.expires_at %} · expires {{ invite.expires_at.strftime('%d %b') }}{% endif %}</span></div>{% if invite.active %}<form method="post" action="/teacher/invites/{{ invite.id }}/disable"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="ghost-button">Disable</button></form>{% endif %}</div>{% else %}<p class="empty">No invite codes yet.</p>{% endfor %}</div>
+  </section>
+</div>
+<div class="grid two-one">
+  <section class="card">
     <p class="eyebrow">CLASSWORK</p>
     <h2>Assignments</h2>
     <div class="list">{% for a in assignments %}<a class="list-row" href="/teacher/assignments/{{ a.id }}"><div><strong>{{ a.title }}</strong><span>Due {{ a.due_at.strftime('%d %b, %I:%M %p') }}</span></div><b class="badge {{ a.status }}">{{ a.status }}</b></a>{% else %}<p class="empty">No assignments for this class yet.</p>{% endfor %}</div>
