@@ -8,18 +8,21 @@
 </head>
 <body>
   <header class="topbar">
-    <a class="brand" href="/">Classroom <span>Companion</span></a>
+    <a class="brand" href="/"><span class="brand-mark">CC</span><span>Classroom <strong>Companion</strong></span></a>
     {% if user %}
-    <div class="account"><span>{{ user.name }}</span>
-      <form method="post" action="/logout"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="link-button">Sign out</button></form>
+    <div class="account">
+      <span class="account-name">{{ user.name }}</span>
+      <form method="post" action="/logout">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="ghost-button">Sign out</button>
+      </form>
     </div>
     {% endif %}
   </header>
   <main class="shell">
-    {% if message %}<div class="flash">{{ message }}</div>{% endif %}
+    {% if message %}<div class="flash" role="status">{{ message }}</div>{% endif %}
     {% block content %}{% endblock %}
   </main>
   <footer>Persistent classroom coordination · Telegram-first · server-authorized</footer>
 </body>
 </html>
-

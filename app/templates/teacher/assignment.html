@@ -1,13 +1,61 @@
 {% extends "base.html" %}
 {% block title %}{{ assignment.title }}{% endblock %}
 {% block content %}
-<a class="back" href="/teacher">← Dashboard</a><div class="hero"><div><p class="eyebrow">ASSIGNMENT #{{ assignment.id }}</p><h1>{{ assignment.title }}</h1><p>{{ assignment.instructions }}</p></div><b class="badge large {{ assignment.status }}">{{ assignment.status }}</b></div>
-<div class="grid three">
-  <form class="card stack" method="post" action="/teacher/assignments/{{ assignment.id }}/deadline"><h2>Deadline</h2><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><label>New local deadline<input type="datetime-local" name="due_at" required></label><button>Update deadline</button></form>
-  <form class="card stack" method="post" action="/teacher/assignments/{{ assignment.id }}/instructions"><h2>Clarify instructions</h2><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><textarea name="instructions" rows="3" required>{{ assignment.instructions }}</textarea><button>Save clarification</button></form>
-  <form class="card stack" method="post" action="/teacher/assignments/{{ assignment.id }}/cancel"><h2>Cancel assignment</h2><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><p class="muted">Stops future reminders and closes active student states.</p><button class="danger-button">Cancel assignment</button></form>
+<a class="back" href="/teacher">Back to dashboard</a>
+<div class="hero assignment-hero">
+  <div>
+    <p class="eyebrow">ASSIGNMENT #{{ assignment.id }}</p>
+    <h1>{{ assignment.title }}</h1>
+    <p>{{ assignment.instructions }}</p>
+    <strong class="due-line">Due {{ assignment.due_at.strftime('%A, %d %B at %I:%M %p') }}</strong>
+  </div>
+  <b class="badge large {{ assignment.status }}">{{ assignment.status }}</b>
 </div>
-<section class="card"><p class="eyebrow">PROGRESS</p><h2>Student status</h2><div class="table"><div class="tr th"><span>Student</span><span>Status</span><span>Last activity</span><span>Blocker</span></div>{% for state, student in state_rows %}<div class="tr"><span><strong>{{ student.name }}</strong></span><span><b class="badge {{ state.status }}">{{ state.status|replace('_',' ') }}</b></span><span>{{ state.last_activity_at or 'No response' }}</span><span>{{ state.block_reason or '—' }}</span></div>{% endfor %}</div></section>
-<section class="card"><p class="eyebrow">REVIEW</p><h2>Submissions</h2>{% for s in submissions %}<article class="submission"><div><strong>{{ s.original_filename or s.text_content or ('Telegram file ' ~ s.telegram_file_id) }}</strong><span>Student #{{ s.student_id }} · {{ s.created_at }}</span></div><form method="post" action="/teacher/submissions/{{ s.id }}/feedback" class="feedback-form"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><textarea name="message" placeholder="Specific, supportive feedback" required></textarea><select name="outcome"><option value="revision">Needs revision</option><option value="complete">Complete</option></select><button>Send feedback</button></form></article>{% else %}<p class="empty">No submissions yet.</p>{% endfor %}</section>
+<div class="grid three">
+  <form class="card stack" method="post" action="/teacher/assignments/{{ assignment.id }}/deadline">
+    <p class="eyebrow">SCHEDULE</p>
+    <h2>Deadline</h2>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>New local deadline<input type="datetime-local" name="due_at" required></label>
+    <button>Update deadline</button>
+  </form>
+  <form class="card stack" method="post" action="/teacher/assignments/{{ assignment.id }}/instructions">
+    <p class="eyebrow">CLARITY</p>
+    <h2>Instructions</h2>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Student-facing instructions<textarea name="instructions" rows="4" required>{{ assignment.instructions }}</textarea></label>
+    <button>Save clarification</button>
+  </form>
+  <form class="card stack danger-card" method="post" action="/teacher/assignments/{{ assignment.id }}/cancel">
+    <p class="eyebrow">CLOSE</p>
+    <h2>Cancel assignment</h2>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <p class="muted">Stops future reminders and closes active student states.</p>
+    <button class="danger-button">Cancel assignment</button>
+  </form>
+</div>
+<section class="card">
+  <p class="eyebrow">PROGRESS</p>
+  <h2>Student status</h2>
+  <div class="table">
+    <div class="tr th"><span>Student</span><span>Status</span><span>Last activity</span><span>Blocker</span></div>
+    {% for state, student in state_rows %}<div class="tr"><span><strong>{{ student.name }}</strong></span><span><b class="badge {{ state.status }}">{{ state.status|replace('_',' ') }}</b></span><span>{{ state.last_activity_at.strftime('%d %b, %I:%M %p') if state.last_activity_at else 'No response yet' }}</span><span>{{ state.block_reason or 'Clear' }}</span></div>{% else %}<p class="empty">No student states have been created.</p>{% endfor %}
+  </div>
+</section>
+<section class="card">
+  <p class="eyebrow">REVIEW</p>
+  <h2>Submissions</h2>
+  {% for s in submissions %}<article class="submission">
+    <div>
+      <strong>{{ s.original_filename or s.text_content or ('Telegram file ' ~ s.telegram_file_id) }}</strong>
+      <span>Student #{{ s.student_id }} · {{ s.created_at.strftime('%d %b, %I:%M %p') }}</span>
+    </div>
+    <form method="post" action="/teacher/submissions/{{ s.id }}/feedback" class="feedback-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <textarea name="message" placeholder="Specific, supportive feedback" required></textarea>
+      <select name="outcome"><option value="revision">Needs revision</option><option value="complete">Complete</option></select>
+      <button>Send feedback</button>
+    </form>
+  </article>{% else %}<p class="empty">No submissions yet.</p>{% endfor %}
+</section>
 {% endblock %}
-

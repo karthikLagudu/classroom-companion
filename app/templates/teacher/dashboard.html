@@ -1,32 +1,58 @@
 {% extends "base.html" %}
 {% block title %}Teacher dashboard{% endblock %}
 {% block content %}
-<div class="hero"><div><p class="eyebrow">TEACHER WORKSPACE</p><h1>Good to see you, {{ user.name.split(' ')[0] }}.</h1><p>Focus on the students who need you—not the noise.</p></div>
-  <form method="post" action="/teacher/reminders/run"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="primary">Run reminder processing now</button></form></div>
+<div class="hero dashboard-hero">
+  <div>
+    <p class="eyebrow">TEACHER WORKSPACE</p>
+    <h1>Good to see you, {{ user.name.split(' ')[0] }}.</h1>
+    <p>Focus on the students who need you most, then keep the whole class moving.</p>
+  </div>
+  <form method="post" action="/teacher/reminders/run">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="primary">Run reminders</button>
+  </form>
+</div>
 <div class="metrics">
-  <div class="metric"><span>{{ classes|length }}</span><small>Authorized classes</small></div>
-  <div class="metric danger"><span>{{ risks|length }}</span><small>Need attention</small></div>
-  <div class="metric"><span>{{ assignments|length }}</span><small>Total assignments</small></div>
+  <div class="metric"><small>Classes</small><span>{{ classes|length }}</span><p>Authorized spaces</p></div>
+  <div class="metric danger"><small>Attention</small><span>{{ risks|length }}</span><p>Students to review</p></div>
+  <div class="metric"><small>Assignments</small><span>{{ assignments|length }}</span><p>Total created</p></div>
 </div>
 <div class="grid two-one">
-  <section class="card"><div class="section-head"><div><p class="eyebrow">CREATE</p><h2>Assign with natural language</h2></div></div>
+  <section class="card create-card">
+    <div class="section-head">
+      <div>
+        <p class="eyebrow">CREATE</p>
+        <h2>Assign with natural language</h2>
+      </div>
+    </div>
     <form method="post" action="/teacher/assignments" class="stack">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
-      <label>Class<select name="classroom_id">{% for c in classes %}<option value="{{ c.id }}">{{ c.name }} · {{ c.grade }}</option>{% endfor %}</select></label>
-      <label>What should students do?<textarea name="natural_text" rows="4" placeholder="Complete the climate worksheet and upload a photo by Friday at 6 PM" required></textarea></label>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+      <label>Class
+        <select name="classroom_id">{% for c in classes %}<option value="{{ c.id }}">{{ c.name }} · {{ c.grade }}</option>{% endfor %}</select>
+      </label>
+      <label>What should students do?
+        <textarea name="natural_text" rows="5" placeholder="Complete the climate worksheet and upload a photo by Friday at 6 PM" required></textarea>
+      </label>
       <button class="primary">Interpret & assign</button>
     </form>
   </section>
-  <section class="card"><p class="eyebrow">ATTENTION</p><h2>Student risks</h2>
+  <section class="card">
+    <p class="eyebrow">ATTENTION</p>
+    <h2>Student risks</h2>
     <p class="muted">{{ risk_summary }}</p>
-    <div class="list">{% for state, student, assignment in risks %}<a href="/teacher/assignments/{{ assignment.id }}" class="list-row"><div><strong>{{ student.name }}</strong><span>{{ assignment.title }}</span></div><b class="badge {{ state.status }}">{{ state.status|replace('_',' ') }}</b></a>{% else %}<p class="empty">No active risks.</p>{% endfor %}</div>
+    <div class="list">{% for state, student, assignment in risks %}<a href="/teacher/assignments/{{ assignment.id }}" class="list-row"><div><strong>{{ student.name }}</strong><span>{{ assignment.title }}</span></div><b class="badge {{ state.status }}">{{ state.status|replace('_',' ') }}</b></a>{% else %}<p class="empty">No active risks. The room is quiet right now.</p>{% endfor %}</div>
   </section>
 </div>
 <div class="grid two-one">
-  <section class="card"><p class="eyebrow">OVERVIEW</p><h2>Assignments</h2>
-    <div class="list">{% for a in assignments %}<a href="/teacher/assignments/{{ a.id }}" class="list-row"><div><strong>{{ a.title }}</strong><span>Due {{ a.due_at.strftime('%d %b, %I:%M %p') }} · <a href="/teacher/classes/{{ a.classroom_id }}">Class {{ a.classroom_id }}</a></span></div><b class="badge {{ a.status }}">{{ a.status }}</b></a>{% else %}<p class="empty">Create your first assignment above.</p>{% endfor %}</div>
+  <section class="card">
+    <p class="eyebrow">OVERVIEW</p>
+    <h2>Assignments</h2>
+    <div class="list">{% for a in assignments %}<a href="/teacher/assignments/{{ a.id }}" class="list-row"><div><strong>{{ a.title }}</strong><span>Due {{ a.due_at.strftime('%d %b, %I:%M %p') }} · Class {{ a.classroom_id }}</span></div><b class="badge {{ a.status }}">{{ a.status }}</b></a>{% else %}<p class="empty">Create your first assignment above.</p>{% endfor %}</div>
   </section>
-  <section class="card"><p class="eyebrow">DELIVERY LOG</p><h2>Recent messages</h2>
+  <section class="card">
+    <p class="eyebrow">DELIVERY LOG</p>
+    <h2>Recent messages</h2>
     <div class="timeline">{% for d in deliveries %}<div><i></i><p><strong>{{ d.kind|replace('_',' ')|title }}</strong><span>{{ d.status }} · {{ d.body[:85] }}{% if d.body|length > 85 %}…{% endif %}</span></p></div>{% else %}<p class="empty">No messages yet.</p>{% endfor %}</div>
   </section>
 </div>

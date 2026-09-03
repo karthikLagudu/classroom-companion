@@ -1,10 +1,54 @@
 {% extends "base.html" %}
 {% block title %}{{ assignment.title }}{% endblock %}
 {% block content %}
-<a class="back" href="/student">← My assignments</a><div class="hero"><div><p class="eyebrow">ASSIGNMENT #{{ assignment.id }}</p><h1>{{ assignment.title }}</h1><p>{{ assignment.instructions }}</p><strong>Due {{ assignment.due_at.strftime('%A, %d %B at %I:%M %p') }}</strong></div><b class="badge large {{ state.status }}">{{ state.status|replace('_',' ') }}</b></div>
-<div class="grid two-one"><section class="card"><p class="eyebrow">CHECK IN</p><h2>Share an update</h2><form class="stack" method="post" action="/student/assignments/{{ assignment.id }}/progress"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><label>Status<select name="status"><option value="acknowledged">I’ve seen this</option><option value="in_progress">I’m working on it</option><option value="blocked">I’m blocked</option></select></label><label>Update<textarea name="message" rows="3" placeholder="What changed, or what help do you need?" required></textarea></label><button>Save update</button></form></section>
-<section class="card"><p class="eyebrow">SUBMIT</p><h2>Turn in your work</h2><form class="stack" method="post" enctype="multipart/form-data" action="/student/assignments/{{ assignment.id }}/submit"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="idempotency_key" value="{{ idempotency_key }}"><label>Text response<textarea name="text_content" rows="3"></textarea></label><label>Or attach a file<input type="file" name="file"></label><button class="primary">Submit work</button></form></section></div>
-<div class="grid two-one"><section class="card"><h2>Submission history</h2><div class="list">{% for s in submissions %}<div class="list-row"><div><strong>{{ s.original_filename or s.text_content or 'Telegram file' }}</strong><span>{{ s.created_at }} · {{ s.submission_type }}</span></div></div>{% else %}<p class="empty">Nothing submitted yet.</p>{% endfor %}</div></section>
-<section class="card"><h2>Teacher feedback</h2><div class="timeline">{% for f in feedback %}<div><i></i><p><strong>Teacher</strong><span>{{ f.message }}</span></p></div>{% else %}<p class="empty">No feedback yet.</p>{% endfor %}</div></section></div>
+<a class="back" href="/student">Back to my assignments</a>
+<div class="hero assignment-hero">
+  <div>
+    <p class="eyebrow">ASSIGNMENT #{{ assignment.id }}</p>
+    <h1>{{ assignment.title }}</h1>
+    <p>{{ assignment.instructions }}</p>
+    <strong class="due-line">Due {{ assignment.due_at.strftime('%A, %d %B at %I:%M %p') }}</strong>
+  </div>
+  <b class="badge large {{ state.status }}">{{ state.status|replace('_',' ') }}</b>
+</div>
+<div class="grid two-one">
+  <section class="card">
+    <p class="eyebrow">CHECK IN</p>
+    <h2>Share an update</h2>
+    <form class="stack" method="post" action="/student/assignments/{{ assignment.id }}/progress">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>Status<select name="status"><option value="acknowledged">I’ve seen this</option><option value="in_progress">I’m working on it</option><option value="blocked">I’m blocked</option></select></label>
+      <label>Update<textarea name="message" rows="4" placeholder="What changed, or what help do you need?" required></textarea></label>
+      <button>Save update</button>
+    </form>
+  </section>
+  <section class="card">
+    <p class="eyebrow">SUBMIT</p>
+    <h2>Turn in your work</h2>
+    <form class="stack" method="post" enctype="multipart/form-data" action="/student/assignments/{{ assignment.id }}/submit">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+      <label>Text response<textarea name="text_content" rows="4" placeholder="Paste your answer or notes here"></textarea></label>
+      <label>Or attach a file<input type="file" name="file"></label>
+      <button class="primary">Submit work</button>
+    </form>
+  </section>
+</div>
+<div class="grid two-one">
+  <section class="card">
+    <p class="eyebrow">HISTORY</p>
+    <h2>Submission history</h2>
+    <div class="list">{% for s in submissions %}<div class="list-row"><div><strong>{{ s.original_filename or s.text_content or 'Telegram file' }}</strong><span>{{ s.created_at.strftime('%d %b, %I:%M %p') }} · {{ s.submission_type }}</span></div></div>{% else %}<p class="empty">Nothing submitted yet.</p>{% endfor %}</div>
+  </section>
+  <section class="card">
+    <p class="eyebrow">FEEDBACK</p>
+    <h2>Teacher feedback</h2>
+    <div class="timeline">{% for f in feedback %}<div><i></i><p><strong>Teacher</strong><span>{{ f.message }}</span></p></div>{% else %}<p class="empty">No feedback yet.</p>{% endfor %}</div>
+  </section>
+</div>
+<section class="card">
+  <p class="eyebrow">ACTIVITY</p>
+  <h2>Your progress updates</h2>
+  <div class="timeline">{% for p in progress %}<div><i></i><p><strong>{{ p.status|replace('_',' ')|title }}</strong><span>{{ p.created_at.strftime('%d %b, %I:%M %p') }} · {{ p.message }}</span></p></div>{% else %}<p class="empty">Your check-ins will appear here.</p>{% endfor %}</div>
+</section>
 {% endblock %}
-

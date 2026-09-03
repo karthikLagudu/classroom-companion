@@ -14,7 +14,7 @@
     <div>
       <a href="#architecture">Architecture</a>
       <a href="#run">Run locally</a>
-      <a class="nav-cta" href="https://github.com/karthikLagudu/classroom-companion">View source ↗</a>
+      <a class="nav-cta" href="https://github.com/karthikLagudu/classroom-companion">View source</a>
     </div>
   </nav>
 
@@ -22,7 +22,7 @@
     <section class="hero">
       <div class="hero-copy">
         <p class="eyebrow">PRODUCTION-QUALITY TAKE-HOME</p>
-        <h1>Keep every learner<br><em>moving forward.</em></h1>
+        <h1>Keep every learner <em>moving forward.</em></h1>
         <p class="lede">A Telegram-first classroom coordination system for assignments, progress, blockers, submissions, reminders, and teacher feedback.</p>
         <div class="actions">
           <a class="primary" href="https://github.com/karthikLagudu/classroom-companion">Explore the repository</a>
@@ -30,7 +30,7 @@
         </div>
         <p class="hosting-note"><strong>Hosting note:</strong> this Pages site documents the project. The operational product requires a Python application host because GitHub Pages cannot run FastAPI, SQLite, webhooks, or background workers.</p>
       </div>
-      <div class="product-card">
+      <div class="product-card" aria-label="Classroom Companion teacher dashboard preview">
         <div class="card-top"><span>Teacher workspace</span><b>● LIVE SYSTEM DESIGN</b></div>
         <h2>Attention, not noise.</h2>
         <div class="metrics">
@@ -40,7 +40,7 @@
         </div>
         <div class="student"><i class="blocked"></i><p><strong>Aarav Student</strong><span>Blocked · needs teacher support</span></p><b>BLOCKED</b></div>
         <div class="student"><i class="silent"></i><p><strong>Diya Student</strong><span>No acknowledgement yet</span></p><b>SILENT</b></div>
-        <div class="delivery">Reminder policy → differentiated messages → delivery log</div>
+        <div class="delivery">Reminder policy -> differentiated messages -> delivery log</div>
       </div>
     </section>
 
@@ -69,15 +69,15 @@
         <p class="eyebrow">ARCHITECTURE</p>
         <h2>Model-assisted.<br>Deterministically safe.</h2>
         <p>Transport adapters delegate to shared domain services. Every supplied ID passes server-side scope checks. Every student state change passes one central transition map. Model output is validated before it can become domain input.</p>
-        <a class="text-link" href="https://github.com/karthikLagudu/classroom-companion/blob/main/ARCHITECTURE.md">Read the architecture notes →</a>
+        <a class="text-link" href="https://github.com/karthikLagudu/classroom-companion/blob/main/ARCHITECTURE.md">Read the architecture notes</a>
       </div>
       <div class="flow" aria-label="Application architecture diagram">
         <div class="flow-row"><b>Telegram</b><b>Browser</b><b>Worker</b></div>
-        <span>↓</span>
+        <span>v</span>
         <div class="flow-box">FastAPI transport adapters</div>
-        <span>↓</span>
+        <span>v</span>
         <div class="flow-box accent">Authorization + domain services + state machine</div>
-        <span>↓</span>
+        <span>v</span>
         <div class="flow-row"><b>Validated LLM</b><b>SQLite + WAL</b><b>Delivery log/API</b></div>
       </div>
     </section>
