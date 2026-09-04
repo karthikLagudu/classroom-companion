@@ -127,7 +127,7 @@ class ReminderProcessor:
                         success=True,
                     )
                 )
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - provider failures use deterministic fallback
                 body = f"Reminder: {assignment.title} is due {facts['due']}. Reply with progress or ask for help."
                 db.add(
                     LLMInteraction(

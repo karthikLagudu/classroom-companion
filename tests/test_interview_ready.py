@@ -4,7 +4,7 @@ import pytest
 from sqlalchemy import func, select
 
 from app.auth.security import hash_password
-from app.exceptions import InviteError
+from app.exceptions import AuthorizationError, InviteError
 from app.models import (
     ActivityEvent,
     Assignment,
@@ -348,7 +348,7 @@ def test_repeated_join_is_idempotent_but_relink_is_rejected(db, data):
 
 
 def test_class_creation_requires_school_role(db, data):
-    with pytest.raises(Exception):
+    with pytest.raises(AuthorizationError):
         ClassroomService().create_classroom(
             db, data["student1"], data["school2"].id, "Forbidden", "10"
         )
@@ -407,7 +407,7 @@ def test_telegram_failure_is_persisted_without_rolling_back(app, db, data):
 
 def test_malformed_webhook_and_callback_are_safe(client, app, db, data):
     malformed = client.post(
-        "/telegram/webhook/change-me",
+        "/telegram/webhook/test-webhook-secret",
         content="{bad json",
         headers={"content-type": "application/json"},
     )
@@ -421,6 +421,6 @@ def test_malformed_webhook_and_callback_are_safe(client, app, db, data):
             "message": {"chat": {"id": 201}},
         },
     }
-    response = client.post("/telegram/webhook/change-me", json=callback)
+    response = client.post("/telegram/webhook/test-webhook-secret", json=callback)
     assert response.status_code == 200
     assert "acknowledged" in response.json()["result"]

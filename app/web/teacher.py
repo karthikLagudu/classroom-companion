@@ -23,6 +23,7 @@ from app.models import (
     SchoolMembership,
     StudentAssignmentState,
     Submission,
+    TelegramLinkToken,
     User,
 )
 from app.services.authorization import (
@@ -32,9 +33,79 @@ from app.services.authorization import (
 from app.services.classroom import ClassroomService
 from app.services.risk import RiskService
 from app.services.submission import FeedbackService
+from app.services.telegram_link import TelegramConnectionLink
 from app.web.helpers import csrf, operation_key, render, teacher_classes, web_user
 
 router = APIRouter()
+
+
+def _render_class_page(
+    request: Request,
+    user: User,
+    db: Session,
+    class_id: int,
+    *,
+    connection_link: TelegramConnectionLink | None = None,
+    link_student_id: int | None = None,
+    message: str | None = None,
+):
+    classroom = require_teacher_class(db, user, class_id)
+    students = list(
+        db.scalars(
+            select(User)
+            .join(ClassMembership, ClassMembership.user_id == User.id)
+            .where(
+                ClassMembership.classroom_id == class_id,
+                ClassMembership.role == "student",
+            )
+            .order_by(User.name)
+        )
+    )
+    assignments = list(
+        db.scalars(
+            select(Assignment)
+            .where(Assignment.classroom_id == class_id)
+            .order_by(Assignment.due_at)
+        )
+    )
+    invites = list(
+        db.scalars(
+            select(Invite)
+            .where(Invite.classroom_id == class_id)
+            .order_by(Invite.created_at.desc())
+        )
+    )
+    student_ids = [student.id for student in students]
+    active_tokens = {}
+    if student_ids:
+        active_tokens = {
+            token.user_id: token
+            for token in db.scalars(
+                select(TelegramLinkToken)
+                .where(
+                    TelegramLinkToken.user_id.in_(student_ids),
+                    TelegramLinkToken.used_at.is_(None),
+                    TelegramLinkToken.revoked_at.is_(None),
+                    TelegramLinkToken.expires_at > datetime.now(UTC),
+                )
+                .order_by(TelegramLinkToken.created_at)
+            )
+        }
+    return render(
+        request,
+        "teacher/class.html",
+        user=user,
+        classroom=classroom,
+        students=students,
+        assignments=assignments,
+        invites=invites,
+        active_tokens=active_tokens,
+        connection_link=connection_link,
+        link_student_id=link_student_id,
+        csrf_token=csrf(request),
+        assignment_key=operation_key("assignment"),
+        message=message,
+    )
 
 
 @router.get("/teacher", response_class=HTMLResponse)
@@ -123,37 +194,11 @@ def teacher_class(
     user: User = Depends(web_user),
     db: Session = Depends(get_db),
 ):
-    classroom = require_teacher_class(db, user, class_id)
-    students = list(
-        db.scalars(
-            select(User)
-            .join(ClassMembership, ClassMembership.user_id == User.id)
-            .where(ClassMembership.classroom_id == class_id, ClassMembership.role == "student")
-        )
-    )
-    assignments = list(
-        db.scalars(
-            select(Assignment)
-            .where(Assignment.classroom_id == class_id)
-            .order_by(Assignment.due_at)
-        )
-    )
-    invites = list(
-        db.scalars(
-            select(Invite)
-            .where(Invite.classroom_id == class_id)
-            .order_by(Invite.created_at.desc())
-        )
-    )
-    return render(
+    return _render_class_page(
         request,
-        "teacher/class.html",
-        user=user,
-        classroom=classroom,
-        students=students,
-        assignments=assignments,
-        invites=invites,
-        csrf_token=csrf(request),
+        user,
+        db,
+        class_id,
         message=request.query_params.get("message"),
     )
 
@@ -192,6 +237,48 @@ def add_student(
     db.commit()
     return RedirectResponse(
         f"/teacher/classes/{class_id}?message=Student+added", status_code=303
+    )
+
+
+@router.post("/teacher/classes/{class_id}/students/{student_id}/telegram-link")
+def create_telegram_link(
+    request: Request,
+    class_id: int,
+    student_id: int,
+    csrf_token: str = Form(),
+    user: User = Depends(web_user),
+    db: Session = Depends(get_db),
+):
+    validate_csrf(request, csrf_token)
+    link = request.app.state.telegram_link_service.create_link(
+        db, user, class_id, student_id
+    )
+    db.commit()
+    return _render_class_page(
+        request,
+        user,
+        db,
+        class_id,
+        connection_link=link,
+        link_student_id=student_id,
+        message="Secure Telegram link generated. Copy it before leaving this page.",
+    )
+
+
+@router.post("/teacher/classes/{class_id}/students/{student_id}/telegram-disconnect")
+def disconnect_telegram(
+    request: Request,
+    class_id: int,
+    student_id: int,
+    csrf_token: str = Form(),
+    user: User = Depends(web_user),
+    db: Session = Depends(get_db),
+):
+    validate_csrf(request, csrf_token)
+    request.app.state.telegram_link_service.disconnect(db, user, class_id, student_id)
+    db.commit()
+    return RedirectResponse(
+        f"/teacher/classes/{class_id}?message=Telegram+disconnected", status_code=303
     )
 
 
@@ -236,6 +323,8 @@ def create_assignment(
     natural_text: str = Form(),
     idempotency_key: str = Form(),
     csrf_token: str = Form(),
+    student_ids: list[int] = Form(default=[]),
+    targeting_mode: str = Form(default="all"),
     user: User = Depends(web_user),
     db: Session = Depends(get_db),
 ):
@@ -255,6 +344,7 @@ def create_assignment(
             parsed.due_at,
             school.timezone,
             idempotency_key,
+            student_ids if targeting_mode == "selected" else None,
         )
         db.commit()
         return RedirectResponse(

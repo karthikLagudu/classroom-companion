@@ -92,14 +92,14 @@ class DemoLLM(LLMProvider):
         if lower.startswith("how is ") or "class status" in lower:
             return TeacherIntent(intent="class_status", class_reference=clean[7:], confidence=0.9)
         if lower.startswith("cancel "):
-            reference = re.sub(r"^cancel\s+(?:today(?:'s)?\s+)?", "", clean, flags=re.I)
-            reference = re.sub(r"\s+(?:homework|assignment)$", "", reference, flags=re.I)
+            reference = re.sub(r"^cancel\s+(?:today(?:'s)?\s+)?", "", clean, flags=re.IGNORECASE)
+            reference = re.sub(r"\s+(?:homework|assignment)$", "", reference, flags=re.IGNORECASE)
             return TeacherIntent(
                 intent="cancel_assignment", assignment_reference=reference, confidence=0.92
             )
         if lower.startswith("clarify ") or "instructions" in lower:
             before, _, after = clean.partition(":")
-            reference = re.sub(r"^clarify\s+", "", before, flags=re.I)
+            reference = re.sub(r"^clarify\s+", "", before, flags=re.IGNORECASE)
             return TeacherIntent(
                 intent="update_assignment_instructions",
                 assignment_reference=reference,
@@ -108,7 +108,7 @@ class DemoLLM(LLMProvider):
             )
         if lower.startswith(("move ", "actually ")) or "until " in lower:
             due_intent = self.interpret_assignment(f"Temporary task by {clean}", timezone_name, now)
-            match = re.search(r"move\s+(?:the\s+)?(.+?)\s+to\s+", clean, re.I)
+            match = re.search(r"move\s+(?:the\s+)?(.+?)\s+to\s+", clean, re.IGNORECASE)
             reference = match.group(1) if match else ""
             return TeacherIntent(
                 intent="update_assignment_deadline",
@@ -118,7 +118,7 @@ class DemoLLM(LLMProvider):
                 confidence=0.9,
             )
         assignment = self.interpret_assignment(clean, timezone_name, now)
-        class_match = re.search(r"(grade\s+\d+\s+[a-z]+)", clean, re.I)
+        class_match = re.search(r"(grade\s+\d+\s+[a-z]+)", clean, re.IGNORECASE)
         return TeacherIntent(
             intent="create_assignment" if assignment.intent == "create_assignment" else "clarify",
             class_reference=class_match.group(1) if class_match else None,

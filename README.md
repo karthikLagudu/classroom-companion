@@ -8,6 +8,7 @@ The implementation preserves a strict boundary: the language model interprets te
 
 - School roles and class memberships support coordinators, teachers in several classes, shared teachers, and class-scoped students.
 - Teachers can create classes, pre-create students, generate/disable expiring invite codes, and inspect onboarding state without editing the database.
+- Authorized teachers/coordinators can generate a hashed, expiring, one-time Telegram deep link for an existing student, revoke it by regeneration, disconnect safely, and reconnect explicitly.
 - Natural-language Telegram flows cover assignment creation, deadline changes, instruction clarification, cancellation, class/risk summaries, acknowledgement, progress, blockers, help, and text submission.
 - Commands remain available as deterministic fallbacks: `/join`, `/assign`, `/ack`, `/progress`, `/blocked`, `/submit`, `/status`, and `/help`.
 - Conversation context is persisted for 30 minutes, enabling “Move it to Friday” and a photo arriving after “Here’s my homework.” Ambiguous or expired context asks the user to choose instead of guessing.
@@ -76,7 +77,9 @@ Open <http://127.0.0.1:8000>. `python -m scripts.seed` is idempotent. This proje
 | `OPENAI_MODEL` | Responses API model | `gpt-5-mini` |
 | `TELEGRAM_MODE` | `log` or `real` | `log` |
 | `TELEGRAM_BOT_TOKEN` | Required in real Telegram mode | blank |
+| `TELEGRAM_BOT_USERNAME` | Bot username used for secure student deep links | blank |
 | `TELEGRAM_WEBHOOK_SECRET` | Unpredictable webhook path segment | local placeholder |
+| `TELEGRAM_LINK_TOKEN_MINUTES` | One-time student link lifetime | `30` |
 | `UPLOAD_DIR` / `MAX_UPLOAD_BYTES` | Confined storage and byte limit | `uploads` / 10 MiB |
 | `QUIET_HOUR_START/END` | School-local no-send window | `22` / `7` |
 | `REMINDER_INTERVAL_SECONDS` | Worker interval; `0` disables | `300` |
@@ -93,9 +96,10 @@ Create a bot with BotFather, set `TELEGRAM_MODE=real` and `TELEGRAM_BOT_TOKEN`, 
 
 ```powershell
 python -m scripts.set_telegram_webhook
+python -m scripts.check_telegram_webhook
 ```
 
-The endpoint is `POST /telegram/webhook/{TELEGRAM_WEBHOOK_SECRET}`. Link a pre-created student with `/join CODE EMAIL`. Display names and Telegram usernames are never treated as school identity.
+The endpoint is `POST /telegram/webhook/{TELEGRAM_WEBHOOK_SECRET}` and requires Telegram's matching secret-token header in real mode. The primary onboarding path is an authorized, per-student `/start TOKEN` deep link; `/join CODE EMAIL` remains a fallback. Display names and Telegram usernames are never treated as school identity. See [TELEGRAM_SETUP.md](TELEGRAM_SETUP.md) for exact beginner setup, webhook verification, troubleshooting, and the two-account acceptance test.
 
 ## Verification
 

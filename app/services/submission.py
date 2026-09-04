@@ -9,8 +9,8 @@ from sqlalchemy.orm import Session
 from app.models import ActivityEvent, Assignment, Feedback, Submission, User
 from app.services.assignment import get_student_state
 from app.services.authorization import require_student_assignment, require_teacher_submission
-from app.services.state_machine import transition
 from app.services.notification import NotificationService
+from app.services.state_machine import transition
 
 
 class SubmissionService:

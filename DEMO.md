@@ -1,5 +1,7 @@
 # End-to-end interview demo
 
+For real-bot configuration and the exact Rahul/Priya two-account targeting test, use [TELEGRAM_SETUP.md](TELEGRAM_SETUP.md).
+
 This runbook demonstrates the same service paths in real and offline modes. Use real OpenAI and Telegram when credentials are available; use the fallback only for deterministic local review.
 
 ## 1. Start from a clean demo database
@@ -23,6 +25,7 @@ OPENAI_API_KEY=...
 OPENAI_MODEL=gpt-5-mini
 TELEGRAM_MODE=real
 TELEGRAM_BOT_TOKEN=...
+TELEGRAM_BOT_USERNAME=your_bot_username
 BASE_URL=https://your-public-tunnel.example
 TELEGRAM_WEBHOOK_SECRET=a-long-random-value
 ```
@@ -33,7 +36,7 @@ Register the webhook with `python -m scripts.set_telegram_webhook`. For offline 
 
 Sign in as `teacher@sim.school` / `DemoPass123!`. Show Grade 8 Science, two students, the linked status, assignments, risk scores, activity, and scoped delivery log. Student 1 is linked; Student 2 is intentionally unlinked/silent.
 
-Optionally prove live onboarding: create a class on the dashboard, open it, add two student records, generate an invite, inspect expiry/use count, then disable it. The seeded Student 2 can link by sending:
+Optionally prove live onboarding: create a class on the dashboard, open it, add two student records, generate a secure Telegram link for each, and connect them with `/start TOKEN`. Invite codes remain available as a fallback; the seeded Student 2 can use:
 
 ```text
 /join SIM8SCI student2@sim.school

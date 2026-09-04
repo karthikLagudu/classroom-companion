@@ -18,6 +18,7 @@ dependencies = [
   "openai>=1.100,<3",
   "itsdangerous>=2.2,<3",
   "python-dateutil>=2.9,<3",
+  "tzdata>=2025.2",
 ]
 
 [project.optional-dependencies]

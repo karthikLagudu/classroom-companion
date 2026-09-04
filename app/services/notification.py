@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Assignment, AssignmentTarget, NotificationDelivery, User
+from app.models import Assignment, AssignmentTarget, Classroom, NotificationDelivery, User
 from app.telegram.client import TelegramClient
 
 
@@ -19,7 +19,9 @@ class NotificationService:
     @staticmethod
     def format_deadline(value: datetime, timezone_name: str) -> str:
         aware = value.replace(tzinfo=value.tzinfo or UTC)
-        return aware.astimezone(ZoneInfo(timezone_name)).strftime("%A, %d %B at %I:%M %p %Z")
+        return aware.astimezone(ZoneInfo(timezone_name)).strftime(
+            "%A, %d %B %Y at %I:%M %p %Z"
+        )
 
     def students(self, db: Session, assignment: Assignment) -> list[User]:
         return list(
@@ -68,9 +70,13 @@ class NotificationService:
     def notify_assignment_created(
         self, db: Session, assignment: Assignment
     ) -> list[NotificationDelivery]:
+        classroom = db.get(Classroom, assignment.classroom_id)
         body = (
-            f"New assignment #{assignment.id}: {assignment.title}\n"
-            f"{assignment.instructions}\nDue: {self.format_deadline(assignment.due_at, assignment.timezone)}"
+            "📚 New Homework Assigned\n\n"
+            f"Assignment:\n{assignment.title}\n\n"
+            f"📝 Instructions:\n{assignment.instructions}\n\n"
+            f"⏰ Due:\n{self.format_deadline(assignment.due_at, assignment.timezone)}\n\n"
+            f"Class:\n{classroom.name if classroom else f'Class {assignment.classroom_id}'}"
         )
         deliveries = []
         for student in self.students(db, assignment):

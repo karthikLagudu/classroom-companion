@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.exceptions import DomainError
+from app.exceptions import DomainError, TelegramLinkError
 from app.llm.service import LLMService
 from app.models import (
     Assignment,
@@ -20,13 +20,15 @@ from app.services.invite import InviteService
 from app.services.notification import NotificationService
 from app.services.progress import ProgressService
 from app.services.submission import SubmissionService
+from app.services.telegram_link import TelegramLinkService
 from app.telegram.client import TelegramClient
 from app.telegram.files import TelegramFileService
 from app.telegram.router import TelegramIntentRouter
 
 logger = logging.getLogger(__name__)
 HELP = (
-    "Commands:\n/join CODE EMAIL - link your pre-created student account\n"
+    "Connect with the secure link provided by Classroom Companion or your teacher.\n"
+    "Fallback: /join CODE EMAIL - link a pre-created student account\n\nCommands:\n"
     "/assign CLASS_ID instructions and deadline - teacher creates work\n"
     "/ack ASSIGNMENT_ID\n/progress ASSIGNMENT_ID update\n/blocked ASSIGNMENT_ID reason\n"
     "/submit ASSIGNMENT_ID text (or attach a file with this caption)\n/status"
@@ -42,6 +44,7 @@ class TelegramService:
         self.progress = ProgressService()
         self.submissions = SubmissionService()
         self.invites = InviteService()
+        self.links = TelegramLinkService(client.settings)
         self.files = TelegramFileService(client.settings, client)
         self.intent_router = TelegramIntentRouter(llm, client, self.notifications)
 
@@ -105,7 +108,84 @@ class TelegramService:
         update_id: int,
     ) -> str:
         parts = shlex.split(text) if text.startswith("/") else []
-        command = parts[0].lower() if parts else ""
+        command = parts[0].lower().split("@", 1)[0] if parts else ""
+        if command == "/start":
+            if len(parts) == 1:
+                if user:
+                    self.client.send(
+                        db,
+                        user,
+                        chat_id,
+                        f"Classroom Companion is connected as {user.name}.\n\n{HELP}",
+                        kind="help",
+                    )
+                    return "start_linked"
+                self.client.send(
+                    db,
+                    None,
+                    chat_id,
+                    "Welcome to Classroom Companion.\n\n"
+                    "To receive school notifications, use the secure Telegram connection "
+                    "link provided through Classroom Companion or your teacher.",
+                    kind="help",
+                )
+                return "start_unlinked"
+            if len(parts) != 2:
+                self.client.send(
+                    db,
+                    user,
+                    chat_id,
+                    "❌ This Telegram connection link is invalid.\n\n"
+                    "Please request a new connection link.",
+                    kind="telegram_link_error",
+                )
+                return "telegram_link:invalid"
+            if message.get("chat", {}).get("type") not in {None, "private"}:
+                self.client.send(
+                    db,
+                    user,
+                    chat_id,
+                    "For your privacy, open this connection link in a private chat with the bot.",
+                    kind="telegram_link_error",
+                )
+                return "telegram_link:non_private"
+            try:
+                target = self.links.consume_token(
+                    db, parts[1], telegram_user_id, chat_id
+                )
+            except TelegramLinkError as exc:
+                if exc.code == "expired":
+                    response = (
+                        "⏰ This Telegram connection link has expired.\n\n"
+                        "Please request a new connection link."
+                    )
+                elif exc.code == "used":
+                    response = (
+                        "❌ This Telegram connection link has already been used.\n\n"
+                        "Please request a new connection link."
+                    )
+                elif exc.code in {"telegram_conflict", "student_conflict"}:
+                    response = f"❌ {exc}"
+                else:
+                    response = (
+                        "❌ This Telegram connection link is invalid.\n\n"
+                        "Please request a new connection link."
+                    )
+                self.client.send(
+                    db, user, chat_id, response, kind="telegram_link_error"
+                )
+                return f"telegram_link:{exc.code}"
+            self.client.send(
+                db,
+                target,
+                chat_id,
+                "✅ Telegram connected successfully.\n\n"
+                f"Hello {target.name}.\n\n"
+                "You will now receive homework, assignment and reminder notifications here.",
+                kind="telegram_connected",
+                idempotency_key=f"telegram-connected:{update_id}",
+            )
+            return f"telegram_link:connected:{target.id}"
         if command == "/join":
             if len(parts) != 3:
                 self.client.send(
@@ -131,8 +211,9 @@ class TelegramService:
                 kind="help",
             )
             return "unlinked"
-        user.telegram_chat_id = chat_id
-        if command in {"/help", "/start"}:
+        if not user.telegram_chat_id:
+            user.telegram_chat_id = chat_id
+        if command == "/help":
             self.client.send(db, user, chat_id, HELP, kind="help")
             return "help"
         if command == "/assign":

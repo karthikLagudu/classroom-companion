@@ -16,10 +16,10 @@ from app.models import (
     StudentAssignmentState,
     User,
 )
+from app.reminders.scheduler import ReminderScheduler
 from app.services.authorization import require_teacher_class
 from app.services.notification import NotificationService
 from app.services.state_machine import transition
-from app.reminders.scheduler import ReminderScheduler
 
 
 class AssignmentService:
@@ -37,6 +37,7 @@ class AssignmentService:
         due_at: datetime,
         timezone_name: str,
         idempotency_key: str | None = None,
+        student_ids: list[int] | None = None,
     ) -> Assignment:
         classroom = require_teacher_class(db, actor, classroom_id)
         if due_at.tzinfo is None:
@@ -49,7 +50,7 @@ class AssignmentService:
             existing = db.get(Assignment, int(existing_key.result_reference))
             if existing:
                 return existing
-        students = list(
+        class_students = list(
             db.scalars(
                 select(User)
                 .join(ClassMembership, ClassMembership.user_id == User.id)
@@ -58,8 +59,15 @@ class AssignmentService:
                 )
             )
         )
+        if student_ids is None:
+            students = class_students
+        else:
+            requested = set(student_ids)
+            students = [student for student in class_students if student.id in requested]
+            if requested != {student.id for student in students}:
+                raise ValidationError("One or more selected students are outside this class")
         if not students:
-            raise ValidationError("Class has no students")
+            raise ValidationError("Select at least one student")
         assignment = Assignment(
             school_id=classroom.school_id,
             classroom_id=classroom_id,

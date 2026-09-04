@@ -125,6 +125,11 @@ def data(db: Session) -> dict[str, object]:
 @pytest.fixture
 def app(db: Session):
     application = create_app()
+    application.state.settings.telegram_mode = "log"
+    application.state.settings.telegram_bot_token = None
+    application.state.settings.telegram_bot_username = "classroom_test_bot"
+    application.state.settings.telegram_webhook_secret = "test-webhook-secret"
+    application.state.settings.base_url = "http://127.0.0.1:8000"
     application.state.session_factory = sessionmaker(
         bind=db.get_bind(), expire_on_commit=False, autoflush=False
     )

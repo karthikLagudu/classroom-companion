@@ -2,7 +2,7 @@
 
 ## Identity and onboarding
 
-Application users are canonical identities; Telegram IDs are unique links to those accounts. Handles and display names are mutable and are not school evidence. `/join CODE EMAIL` deliberately combines a class capability with a pre-created student identity. The same generic response is used when details cannot be verified, limiting account enumeration. Invites enforce active state, expiry, use limits, school consistency, existing memberships, and Telegram uniqueness. A real pilot should replace email with a short-lived per-student deep-link token.
+Application users are canonical identities; Telegram IDs are unique links to those accounts. Handles and display names are mutable and are not school evidence. The primary flow now uses a short-lived, high-entropy, one-time per-student deep-link token whose digest—not raw value—is stored. It is issued only through scoped class authorization and resolves directly to the internal user. `/join CODE EMAIL` remains a deliberate fallback combining a class capability with a pre-created identity. Invites enforce active state, expiry, use limits, school consistency, existing memberships, and Telegram uniqueness.
 
 Coordinators and teachers can create a class inside a school where they already hold the corresponding school role. The creator receives a teacher class membership. Authorized teachers/coordinators can pre-create a student with a temporary password, add school/class memberships, and create or disable invites. This is enough for the interview scenario without turning the take-home into a school administration suite. Temporary passwords are entered by the operator and never displayed again.
 

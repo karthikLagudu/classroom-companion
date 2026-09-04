@@ -42,6 +42,22 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class TelegramLinkToken(Base):
+    __tablename__ = "telegram_link_tokens"
+    __table_args__ = (Index("ix_telegram_link_token_active", "user_id", "expires_at"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    created_by_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    classroom_id: Mapped[int] = mapped_column(
+        ForeignKey("classrooms.id", ondelete="CASCADE"), index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class SchoolMembership(Base):
     __tablename__ = "school_memberships"
     __table_args__ = (

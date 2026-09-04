@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import secrets
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -18,9 +19,10 @@ from app.dependencies import build_llm_provider
 from app.exceptions import AuthorizationError, DomainError, NotFoundError
 from app.llm.service import LLMService
 from app.reminders.worker import reminder_loop
-from app.services.reminder import ReminderService
 from app.services.assignment import AssignmentService
 from app.services.notification import NotificationService
+from app.services.reminder import ReminderService
+from app.services.telegram_link import TelegramLinkService
 from app.telegram.client import TelegramClient
 from app.telegram.service import TelegramService
 from app.web.router import router as web_router
@@ -57,6 +59,7 @@ def create_app() -> FastAPI:
     app.state.llm_service = LLMService(provider)
     app.state.telegram_client = telegram_client
     app.state.notification_service = NotificationService(telegram_client)
+    app.state.telegram_link_service = TelegramLinkService(settings)
     app.state.assignment_service = AssignmentService(app.state.notification_service)
     app.state.telegram_service = TelegramService(app.state.llm_service, telegram_client)
     app.state.reminder_service = ReminderService(provider, telegram_client, settings)
@@ -69,11 +72,16 @@ def create_app() -> FastAPI:
         started = time.perf_counter()
         response = await call_next(request)
         response.headers["x-request-id"] = request_id
+        logged_path = (
+            "/telegram/webhook/[redacted]"
+            if request.url.path.startswith("/telegram/webhook/")
+            else request.url.path
+        )
         logger.info(
             "request id=%s method=%s path=%s status=%s duration_ms=%.1f",
             request_id,
             request.method,
-            request.url.path,
+            logged_path,
             response.status_code,
             (time.perf_counter() - started) * 1000,
         )
@@ -105,11 +113,19 @@ def create_app() -> FastAPI:
 
     @app.post("/telegram/webhook/{secret}")
     async def telegram_webhook(secret: str, request: Request):
-        if not __import__("secrets").compare_digest(secret, settings.telegram_webhook_secret):
+        path_valid = secrets.compare_digest(secret, settings.telegram_webhook_secret)
+        header_secret = request.headers.get("x-telegram-bot-api-secret-token")
+        header_valid = (
+            header_secret is not None
+            and secrets.compare_digest(header_secret, settings.telegram_webhook_secret)
+        )
+        if settings.telegram_mode != "real" and header_secret is None:
+            header_valid = True
+        if not path_valid or not header_valid:
             return JSONResponse(status_code=404, content={"detail": "Not found"})
         try:
             update = await request.json()
-        except Exception:
+        except (UnicodeDecodeError, ValueError):
             logger.warning("telegram_webhook_malformed_json")
             return {"ok": True, "result": "ignored_malformed_json"}
         if not isinstance(update, dict):

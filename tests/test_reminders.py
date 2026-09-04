@@ -29,7 +29,9 @@ def test_completed_assignment_suppresses_normal_reminder(db, data):
 def test_runner_creates_different_reminders(app, db, data):
     from app.reminders.scheduler import ReminderScheduler
 
-    now = datetime.now(UTC)
+    now = datetime.now(UTC).replace(hour=6, minute=30, second=0, microsecond=0) + timedelta(
+        days=1
+    )
     data["assignment"].due_at = now + timedelta(hours=20)
     ReminderScheduler().schedule_assignment(db, data["assignment"], now)
     state = get_student_state(db, data["assignment"].id, data["student1"].id)

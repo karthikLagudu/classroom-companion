@@ -29,6 +29,13 @@ class TelegramClient:
     def close(self) -> None:
         self.http.close()
 
+    def _safe_error(self, exc: Exception) -> str:
+        message = f"{type(exc).__name__}: {exc}"
+        token = self.settings.telegram_bot_token
+        if token:
+            message = message.replace(token, "[redacted]")
+        return message[:500]
+
     def send(
         self,
         db: Session,
@@ -110,9 +117,9 @@ class TelegramClient:
             delivery.error = None
             delivery.next_attempt_at = None
             delivery.external_message_id = str(data["result"]["message_id"])
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - delivery boundary must preserve assignment data
             delivery.status = "failed"
-            delivery.error = f"{type(exc).__name__}: {exc}"[:500]
+            delivery.error = self._safe_error(exc)
             if delivery.attempt_count < self.settings.notification_max_attempts:
                 delay = RETRY_DELAYS[min(delivery.attempt_count - 1, len(RETRY_DELAYS) - 1)]
                 delivery.next_attempt_at = now + delay

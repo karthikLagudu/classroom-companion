@@ -33,6 +33,8 @@ flowchart TD
 
 Unknown senders can use only help and `/join CODE EMAIL`. Callback buttons are translated into the same command path; they do not mutate state directly. Ambiguous references produce choices. A 30-minute context can hold an active assignment or pending file submission, but it is always re-authorized when consumed.
 
+Primary student onboarding uses `TelegramLinkService`: an authorized teacher/coordinator creates a high-entropy token for an existing class student, only its SHA-256 digest is persisted, and a private `/start TOKEN` atomically validates membership/conflicts, saves numeric Telegram identifiers, and consumes the token. Regeneration revokes earlier unused tokens. `/join CODE EMAIL` remains a fallback. Neither path treats Telegram names or usernames as identity.
+
 ## Reminder flow
 
 ```mermaid
@@ -74,6 +76,7 @@ Files are not mounted as public static data. `GET /submissions/{id}/file` loads 
 - Submission: authorized assignment, unique transport/form key, content hash, state transition, and activity.
 - Feedback: unique form key, feedback, review transition, activity, and delivery.
 - Telegram: unique update ID plus result reference; duplicate callbacks/messages exit before dispatch.
+- Telegram linking: unique token digest, row lock where supported, expiry/revocation/use checks, Telegram uniqueness, explicit disconnect before account replacement, and one transaction for link plus consumption.
 
 Database uniqueness protects update IDs, operation keys, targets/states, submissions, feedback keys, reminder keys, delivery keys, memberships, and conversation `(user_id, chat_id)`.
 
