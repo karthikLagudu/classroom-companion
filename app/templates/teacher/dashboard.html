@@ -13,7 +13,34 @@
   </form>
 </div>
 <div class="metrics">
-  <div class="metric"><small>Classes</small><span>{{ classes|length }}</span><p>Authorized spaces</p></div>
+  <div class="metric-switcher" data-class-switcher>
+    <button
+      type="button"
+      class="metric metric-button"
+      aria-expanded="false"
+      aria-controls="class-switcher-menu"
+    >
+      <small>Classes</small>
+      <span>{{ classes|length }}</span>
+      <p>Choose a class <b class="metric-chevron" aria-hidden="true">⌄</b></p>
+    </button>
+    <div id="class-switcher-menu" class="class-switcher-menu" hidden>
+      <div class="class-switcher-heading">
+        <small>Your classes</small>
+        <span>Select one to open its workspace</span>
+      </div>
+      <nav aria-label="Available classes">
+        {% for c in classes %}
+        <a href="/teacher/classes/{{ c.id }}" class="class-switcher-option">
+          <span><strong>{{ c.name }}</strong><small>{{ c.grade }}</small></span>
+          <b aria-hidden="true">→</b>
+        </a>
+        {% else %}
+        <p class="empty">No classes are available.</p>
+        {% endfor %}
+      </nav>
+    </div>
+  </div>
   <div class="metric danger"><small>Attention</small><span>{{ risks|length }}</span><p>Students to review</p></div>
   <div class="metric"><small>Assignments</small><span>{{ assignments|length }}</span><p>Total created</p></div>
 </div>
@@ -67,4 +94,33 @@
     <div class="timeline">{% for d in deliveries %}<div><i></i><p><strong>{{ d.kind|replace('_',' ')|title }}</strong><span>{{ d.status }} · {{ d.body[:85] }}{% if d.body|length > 85 %}…{% endif %}</span></p></div>{% else %}<p class="empty">No messages yet.</p>{% endfor %}</div>
   </section>
 </div>
+<script>
+  (() => {
+    const switcher = document.querySelector("[data-class-switcher]");
+    if (!switcher) return;
+
+    const trigger = switcher.querySelector("button");
+    const menu = switcher.querySelector("#class-switcher-menu");
+    const closeMenu = (restoreFocus = false) => {
+      menu.hidden = true;
+      trigger.setAttribute("aria-expanded", "false");
+      if (restoreFocus) trigger.focus();
+    };
+
+    trigger.addEventListener("click", () => {
+      const willOpen = menu.hidden;
+      menu.hidden = !willOpen;
+      trigger.setAttribute("aria-expanded", String(willOpen));
+      if (willOpen) menu.querySelector("a")?.focus();
+    });
+
+    document.addEventListener("click", (event) => {
+      if (!switcher.contains(event.target)) closeMenu();
+    });
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && !menu.hidden) closeMenu(true);
+    });
+  })();
+</script>
 {% endblock %}

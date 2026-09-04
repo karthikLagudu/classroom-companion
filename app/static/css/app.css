@@ -229,6 +229,28 @@ footer {
   box-shadow: 0 16px 38px rgba(23, 33, 29, 0.14);
 }
 
+.metric-switcher {
+  position: relative;
+  min-width: 0;
+}
+
+.metric-button {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  text-align: left;
+}
+
+.metric-button:hover {
+  background: #203029;
+  box-shadow: 0 20px 44px rgba(23, 33, 29, 0.22);
+}
+
+.metric-button:focus-visible {
+  outline: 3px solid var(--gold);
+  outline-offset: 3px;
+}
+
 .metric.danger {
   background: var(--red);
 }
@@ -242,7 +264,7 @@ footer {
   text-transform: uppercase;
 }
 
-.metric span {
+.metric > span {
   display: block;
   margin-top: 10px;
   font-size: 42px;
@@ -254,6 +276,103 @@ footer {
   margin: 10px 0 0;
   color: rgba(255, 255, 255, 0.72);
   font-size: 12px;
+}
+
+.metric-chevron {
+  display: inline-grid;
+  width: 22px;
+  height: 22px;
+  margin-left: 6px;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+  font-size: 16px;
+  line-height: 1;
+  transition: transform 140ms ease;
+}
+
+.metric-button[aria-expanded="true"] .metric-chevron {
+  transform: rotate(180deg);
+}
+
+.class-switcher-menu {
+  position: absolute;
+  z-index: 10;
+  top: calc(100% + 10px);
+  left: 0;
+  width: min(380px, calc(100vw - 28px));
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 24px 60px rgba(23, 33, 29, 0.2);
+}
+
+.class-switcher-menu[hidden] {
+  display: none;
+}
+
+.class-switcher-heading {
+  padding: 15px 17px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.class-switcher-heading small,
+.class-switcher-heading span {
+  display: block;
+}
+
+.class-switcher-heading small {
+  color: var(--green);
+  font-size: 11px;
+  font-weight: 850;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.class-switcher-heading span {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.class-switcher-menu nav {
+  max-height: 320px;
+  padding: 7px;
+  overflow-y: auto;
+}
+
+.class-switcher-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 11px 12px;
+  border-radius: 8px;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.class-switcher-option:hover,
+.class-switcher-option:focus-visible {
+  background: var(--mint);
+  outline: 0;
+}
+
+.class-switcher-option span,
+.class-switcher-option small {
+  display: block;
+}
+
+.class-switcher-option small {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.class-switcher-option b {
+  color: var(--green);
+  font-size: 18px;
 }
 
 .stack {

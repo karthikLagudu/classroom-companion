@@ -48,3 +48,16 @@ def test_coordinator_has_school_dashboard(client, app, db, data):
     response = client.get("/coordinator")
     assert response.status_code == 200
     assert "Create a class" in response.text
+
+
+def test_teacher_class_metric_opens_authorized_class_menu(client, app, data):
+    authenticate(client, app, data["teacher1"].id)
+
+    response = client.get("/teacher")
+
+    assert response.status_code == 200
+    assert 'aria-controls="class-switcher-menu"' in response.text
+    assert 'aria-expanded="false"' in response.text
+    assert f'href="/teacher/classes/{data["class1"].id}"' in response.text
+    assert data["class1"].name in response.text
+    assert f'href="/teacher/classes/{data["class2"].id}"' not in response.text
