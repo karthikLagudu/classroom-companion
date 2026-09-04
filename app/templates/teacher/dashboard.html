@@ -55,6 +55,46 @@
     <button>Create class</button>
   </form>
 </section>
+{% if can_manage_teachers %}
+<section class="card coordinator-teacher-card">
+  <div class="section-head">
+    <div>
+      <p class="eyebrow">TEAM ACCESS</p>
+      <h2>Add a teacher</h2>
+      <p class="muted">Create a secure login and choose exactly which classes this teacher can access.</p>
+    </div>
+  </div>
+  <form method="post" action="/coordinator/teachers" class="stack teacher-profile-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="teacher-profile-fields">
+      <label>Teacher name<input name="name" placeholder="Anita Sharma" autocomplete="name" required></label>
+      <label>Email<input type="email" name="email" placeholder="anita@school.example" autocomplete="email" required></label>
+      <label>Temporary password<input type="password" name="temporary_password" minlength="10" autocomplete="new-password" required></label>
+      <label>School
+        <select name="school_id" data-teacher-school required>
+          {% for school in coordinator_schools %}<option value="{{ school.id }}">{{ school.name }}</option>{% endfor %}
+        </select>
+      </label>
+    </div>
+    <fieldset class="student-picker teacher-class-picker">
+      <legend>Class access</legend>
+      <p class="tiny">Select one or more classes. The teacher will only see the selected workspaces.</p>
+      {% for c in coordinator_classes %}
+      <label class="check-row" data-teacher-class-school="{{ c.school_id }}">
+        <input type="checkbox" name="classroom_ids" value="{{ c.id }}">
+        <span><strong>{{ c.name }}</strong><small>{{ c.grade }}</small></span>
+      </label>
+      {% else %}
+      <p class="empty">Create a class before adding a teacher.</p>
+      {% endfor %}
+    </fieldset>
+    <div class="teacher-profile-submit">
+      <p class="tiny">Share the temporary password privately. The teacher can sign in immediately after creation.</p>
+      <button class="primary">Create teacher profile</button>
+    </div>
+  </form>
+</section>
+{% endif %}
 <div class="grid two-one">
   <section class="card create-card">
     <div class="section-head">
@@ -121,6 +161,23 @@
     document.addEventListener("keydown", (event) => {
       if (event.key === "Escape" && !menu.hidden) closeMenu(true);
     });
+  })();
+
+  (() => {
+    const school = document.querySelector("[data-teacher-school]");
+    if (!school) return;
+
+    const classRows = document.querySelectorAll("[data-teacher-class-school]");
+    const syncClasses = () => {
+      classRows.forEach((row) => {
+        const visible = row.dataset.teacherClassSchool === school.value;
+        row.hidden = !visible;
+        row.querySelector("input").disabled = !visible;
+        if (!visible) row.querySelector("input").checked = false;
+      });
+    };
+    school.addEventListener("change", syncClasses);
+    syncClasses();
   })();
 </script>
 {% endblock %}

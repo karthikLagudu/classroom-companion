@@ -381,6 +381,35 @@ footer {
   gap: 15px;
 }
 
+.coordinator-teacher-card {
+  border-top: 4px solid var(--green);
+}
+
+.teacher-profile-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.teacher-class-picker {
+  background: rgba(223, 240, 231, 0.28);
+}
+
+.teacher-class-picker .tiny {
+  margin: 0 0 8px;
+}
+
+.teacher-profile-submit {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.teacher-profile-submit p {
+  margin: 0;
+}
+
 label {
   display: flex;
   flex-direction: column;
@@ -957,8 +986,14 @@ button:disabled {
 
   .inline-form,
   .inline-form.compact,
-  .student-row {
+  .student-row,
+  .teacher-profile-fields {
     grid-template-columns: 1fr;
+  }
+
+  .teacher-profile-submit {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .card {

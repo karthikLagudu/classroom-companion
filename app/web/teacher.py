@@ -135,6 +135,13 @@ def teacher_dashboard(
             .distinct()
         )
     )
+    coordinator_school_id_set = set(coordinator_school_ids)
+    coordinator_schools = [
+        school for school in schools if school.id in coordinator_school_id_set
+    ]
+    coordinator_classes = [
+        classroom for classroom in classes if classroom.school_id in coordinator_school_id_set
+    ]
     assignments = list(
         db.scalars(
             select(Assignment)
@@ -176,6 +183,9 @@ def teacher_dashboard(
         user=user,
         classes=classes,
         schools=schools,
+        can_manage_teachers=bool(coordinator_schools),
+        coordinator_schools=coordinator_schools,
+        coordinator_classes=coordinator_classes,
         assignments=assignments,
         risks=risks,
         risk_summary=risk_summary,

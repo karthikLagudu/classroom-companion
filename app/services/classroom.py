@@ -8,11 +8,78 @@ from sqlalchemy.orm import Session
 
 from app.auth.security import hash_password
 from app.exceptions import AuthorizationError, ValidationError
-from app.models import ClassMembership, Classroom, Invite, SchoolMembership, User
+from app.models import (
+    ActivityEvent,
+    ClassMembership,
+    Classroom,
+    Invite,
+    SchoolMembership,
+    User,
+)
 from app.services.authorization import has_school_role, require_teacher_class
 
 
 class ClassroomService:
+    def add_teacher(
+        self,
+        db: Session,
+        actor: User,
+        school_id: int,
+        classroom_ids: list[int],
+        name: str,
+        email: str,
+        temporary_password: str,
+    ) -> User:
+        if not has_school_role(db, actor.id, school_id, {"coordinator"}):
+            raise AuthorizationError("Resource is outside your authorized scope")
+
+        clean_name = name.strip()
+        clean_email = email.strip().lower()
+        selected_ids = sorted(set(classroom_ids))
+        if not clean_name or not clean_email or "@" not in clean_email:
+            raise ValidationError("A valid teacher name and email are required")
+        if len(temporary_password) < 10:
+            raise ValidationError("Temporary password must be at least 10 characters")
+        if not selected_ids:
+            raise ValidationError("Select at least one class for the teacher")
+        if db.scalar(select(User).where(User.email == clean_email)):
+            raise ValidationError("An account with that email already exists")
+
+        classrooms = list(
+            db.scalars(select(Classroom).where(Classroom.id.in_(selected_ids)))
+        )
+        if len(classrooms) != len(selected_ids) or any(
+            classroom.school_id != school_id for classroom in classrooms
+        ):
+            raise AuthorizationError("Resource is outside your authorized scope")
+
+        teacher = User(
+            name=clean_name,
+            email=clean_email,
+            password_hash=hash_password(temporary_password),
+        )
+        db.add(teacher)
+        db.flush()
+        db.add(
+            SchoolMembership(school_id=school_id, user_id=teacher.id, role="teacher")
+        )
+        db.add_all(
+            ClassMembership(classroom_id=classroom.id, user_id=teacher.id, role="teacher")
+            for classroom in classrooms
+        )
+        db.add(
+            ActivityEvent(
+                school_id=school_id,
+                classroom_id=None,
+                actor_user_id=actor.id,
+                event_type="teacher_created",
+                entity_type="user",
+                entity_id=teacher.id,
+                metadata_json={"classroom_ids": selected_ids},
+            )
+        )
+        return teacher
+
     def create_classroom(
         self, db: Session, actor: User, school_id: int, name: str, grade: str
     ) -> Classroom:
